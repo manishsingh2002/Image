@@ -97,7 +97,10 @@ export async function renderDocument(doc: DesignDocument, opts: ExportOptions): 
       } else if (e.type === "ellipse") {
         const c = new Konva.Ellipse({ x: e.x + cx, y: e.y + cy, radiusX: e.width / 2, radiusY: e.height / 2 });
         applyFill(c, e.fill, e.width, e.height);
-        if (e.stroke && e.strokeWidth) { c.stroke(e.stroke); c.strokeWidth(e.strokeWidth); }
+        if (e.stroke && e.strokeWidth) {
+          c.stroke(e.stroke); c.strokeWidth(e.strokeWidth);
+          if (e.dash) c.dash(e.dash);
+        }
         node = c;
       } else if (e.type === "line") {
         const pts = e.points || [0, 0, e.width, 0];

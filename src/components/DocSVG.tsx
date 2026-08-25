@@ -66,7 +66,8 @@ export default function DocSVG({ doc, width, className, radius = 0 }: {
       );
     }
     if (e.type === "ellipse") {
-      return <ellipse cx={cx} cy={cy} rx={e.width / 2} ry={e.height / 2} fill={fillStr || "none"} opacity={e.opacity} transform={transform} style={style} />;
+      return <ellipse cx={cx} cy={cy} rx={e.width / 2} ry={e.height / 2} fill={fillStr || "none"} opacity={e.opacity} transform={transform} style={style}
+        stroke={e.strokeWidth ? e.stroke : undefined} strokeWidth={e.strokeWidth} strokeDasharray={e.dash?.join(" ")} />;
     }
     if (e.type === "line") {
       const pts = e.points || [0, 0, e.width, 0];

@@ -1,9 +1,9 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Stage, Layer, Rect, Ellipse, Line, Path, Text as KText, Image as KImage, Transformer } from "react-konva";
 import Konva from "konva";
-import type { DesignElement, GradientSpec } from "../types";
+import type { DesignDocument, DesignElement, GradientSpec } from "../types";
 import { useAssetsStore, useEditorStore } from "../stores";
-import { clamp, loadImage, uid } from "../lib/utils";
+import { clamp, loadImage, smartResizeDoc, uid } from "../lib/utils";
 import { platformById } from "../lib/constants";
 
 // ─── Image hook with load state ─────────────────────────────────────────────
@@ -83,7 +83,7 @@ const ElementNode = memo(function ElementNode({ e, selected, interactive, editin
   }
   if (e.type === "ellipse") {
     return <Ellipse x={e.x + cx} y={e.y + cy} radiusX={e.width / 2} radiusY={e.height / 2}
-      stroke={e.strokeWidth ? e.stroke : undefined} strokeWidth={e.strokeWidth || 0}
+      stroke={e.strokeWidth ? e.stroke : undefined} strokeWidth={e.strokeWidth || 0} dash={e.dash}
       {...fillProps(e.fill, e.width, e.height)} {...common} />;
   }
   if (e.type === "line") {
@@ -174,6 +174,9 @@ export default function CanvasStage() {
   const updateElements = useEditorStore((s) => s.updateElements);
   const setEditingText = useEditorStore((s) => s.setEditingText);
   const addElements = useEditorStore((s) => s.addElements);
+  const setDoc = useEditorStore((s) => s.setDoc);
+  const pageSelected = useEditorStore((s) => s.pageSelected);
+  const selectPage = useEditorStore((s) => s.selectPage);
   const uploads = useAssetsStore((s) => s.uploads);
 
   const [size, setSize] = useState({ w: 800, h: 600 });
@@ -345,6 +348,64 @@ export default function CanvasStage() {
     if (el?.type === "text") { setEditingText(id); setEditVal(el.text || ""); }
   }, [setEditingText]);
 
+  // ── Page-level gestures (Canva-style: select the frame, move/resize everything) ──
+  const pageStartRef = useRef<{ doc: DesignDocument } | null>(null);
+  const pageRafRef = useRef<number | null>(null);
+
+  const pageDragStart = useCallback(() => {
+    const d = docRef.current;
+    if (d) pageStartRef.current = { doc: d };
+  }, []);
+  const pageDragMove = useCallback((dx: number, dy: number) => {
+    const start = pageStartRef.current;
+    if (!start) return;
+    if (pageRafRef.current) cancelAnimationFrame(pageRafRef.current);
+    pageRafRef.current = requestAnimationFrame(() => {
+      const d = start.doc;
+      setDoc({ ...d, elements: d.elements.map((el) => ({ ...el, x: Math.round(el.x + dx), y: Math.round(el.y + dy) })) }, false);
+    });
+  }, [setDoc]);
+  const pageDragEnd = useCallback((node: Konva.Node) => {
+    const dx = Math.round(node.x()), dy = Math.round(node.y());
+    node.position({ x: 0, y: 0 });
+    const start = pageStartRef.current;
+    pageStartRef.current = null;
+    if (pageRafRef.current) cancelAnimationFrame(pageRafRef.current);
+    if (!start || (!dx && !dy)) return;
+    const d = start.doc;
+    setDoc({ ...d, elements: d.elements.map((el) => ({ ...el, x: el.x + dx, y: el.y + dy })) });
+  }, [setDoc]);
+
+  const startPageResize = useCallback((e: Konva.KonvaEventObject<PointerEvent>) => {
+    e.cancelBubble = true;
+    const d = docRef.current, stage = stageRef.current;
+    if (!d || !stage) return;
+    const startDoc = d;
+    const center = { x: d.width / 2, y: d.height / 2 };
+    const p0 = stage.getRelativePointerPosition();
+    if (!p0) return;
+    const d0 = Math.max(24, Math.hypot(p0.x - center.x, p0.y - center.y));
+    let raf = 0, lastS = 1;
+    const move = (ev: PointerEvent) => {
+      const rect = stage.container().getBoundingClientRect();
+      const px = (ev.clientX - rect.left - stage.x()) / stage.scaleX();
+      const py = (ev.clientY - rect.top - stage.y()) / stage.scaleY();
+      lastS = clamp(Math.hypot(px - center.x, py - center.y) / d0, 0.2, 4);
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        setDoc(smartResizeDoc(startDoc, Math.round(startDoc.width * lastS), Math.round(startDoc.height * lastS)), false);
+      });
+    };
+    const up = () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      setDoc(smartResizeDoc(startDoc, Math.round(startDoc.width * lastS), Math.round(startDoc.height * lastS)));
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  }, [setDoc]);
+
   // ── Drop uploads onto canvas ──
   const onDrop = useCallback((ev: React.DragEvent) => {
     ev.preventDefault();
@@ -404,6 +465,17 @@ export default function CanvasStage() {
           {doc.background.type === "image" && bgImg && <KImage width={doc.width} height={doc.height} image={bgImg} listening={false} />}
           {doc.background.type === "transparent" && <Rect width={doc.width} height={doc.height} fill="#eceae3" listening={false} />}
 
+          {/* Page click-catcher: click empty canvas → select the whole banner.
+              Once selected, dragging it moves every element together (Canva-style). */}
+          <Rect width={doc.width} height={doc.height} fill="#000" opacity={0.01}
+            draggable={pageSelected && !canPan}
+            onClick={(ev) => { ev.cancelBubble = true; selectPage(); }}
+            onTap={(ev) => { ev.cancelBubble = true; selectPage(); }}
+            onDragStart={pageDragStart}
+            onDragMove={(ev) => pageDragMove(ev.target.x(), ev.target.y())}
+            onDragEnd={(ev) => pageDragEnd(ev.target)}
+          />
+
           {/* grid */}
           {showGrid && scale > 0.18 && Array.from({ length: Math.floor(doc.width / 100) - 1 }).map((_, i) => (
             <Line key={`gv${i}`} points={[(i + 1) * 100, 0, (i + 1) * 100, doc.height]} stroke="rgba(120,120,120,0.22)" strokeWidth={1 / scale} listening={false} />
@@ -438,16 +510,47 @@ export default function CanvasStage() {
             rotateAnchorOffset={22} ignoreStroke keepRatio={false} padding={1} />
         </Layer>
 
-        {/* snap guides live on their own layer, updated imperatively */}
-        <Layer ref={guidesLayerRef} listening={false}>
+        {/* snap guides + page chrome live on their own layer, updated imperatively */}
+        <Layer ref={guidesLayerRef}>
           {[0, 1, 2].map((i) => (
             <Line key={`sgv${i}`} ref={(n: Konva.Line | null) => { guideVRefs.current[i] = n; }}
-              points={[0, 0, 0, 0]} stroke="#0e7c6b" strokeWidth={1.5 / scale} dash={[6 / scale, 4 / scale]} visible={false} />
+              points={[0, 0, 0, 0]} stroke="#0e7c6b" strokeWidth={1.5 / scale} dash={[6 / scale, 4 / scale]} visible={false} listening={false} />
           ))}
           {[0, 1, 2].map((i) => (
             <Line key={`sgh${i}`} ref={(n: Konva.Line | null) => { guideHRefs.current[i] = n; }}
-              points={[0, 0, 0, 0]} stroke="#0e7c6b" strokeWidth={1.5 / scale} dash={[6 / scale, 4 / scale]} visible={false} />
+              points={[0, 0, 0, 0]} stroke="#0e7c6b" strokeWidth={1.5 / scale} dash={[6 / scale, 4 / scale]} visible={false} listening={false} />
           ))}
+
+          {/* Canva-style page frame: drag the border to move the entire banner,
+              drag a corner to resize everything proportionally */}
+          {pageSelected && (() => {
+            const pad = 10 / scale;
+            const hs = 13 / scale;
+            const corners: [number, number][] = [[0, 0], [doc.width, 0], [0, doc.height], [doc.width, doc.height]];
+            return (
+              <>
+                <Rect x={-pad - 4 / scale} y={-pad - 4 / scale} width={doc.width + (pad + 4 / scale) * 2} height={doc.height + (pad + 4 / scale) * 2}
+                  stroke="#0e7c6b" strokeWidth={9 / scale} cornerRadius={10 / scale} opacity={0.16} listening={false} />
+                <Rect x={-pad} y={-pad} width={doc.width + pad * 2} height={doc.height + pad * 2}
+                  stroke="#0e7c6b" strokeWidth={2.5 / scale} cornerRadius={6 / scale}
+                  hitStrokeWidth={20 / scale} draggable={!canPan}
+                  onMouseEnter={() => { if (wrapRef.current) wrapRef.current.style.cursor = "grab"; }}
+                  onMouseLeave={() => { if (wrapRef.current) wrapRef.current.style.cursor = ""; }}
+                  onDragStart={pageDragStart}
+                  onDragMove={(ev) => pageDragMove(ev.target.x(), ev.target.y())}
+                  onDragEnd={(ev) => pageDragEnd(ev.target)}
+                />
+                {corners.map(([cxp, cyp], i) => (
+                  <Rect key={`ph${i}`} x={cxp - hs / 2} y={cyp - hs / 2} width={hs} height={hs} cornerRadius={2.5 / scale}
+                    fill="#0e7c6b" stroke="#ffffff" strokeWidth={1.6 / scale}
+                    onMouseEnter={() => { if (wrapRef.current) wrapRef.current.style.cursor = i % 3 === 0 ? "nwse-resize" : "nesw-resize"; }}
+                    onMouseLeave={() => { if (wrapRef.current) wrapRef.current.style.cursor = ""; }}
+                    onPointerDown={startPageResize}
+                  />
+                ))}
+              </>
+            );
+          })()}
         </Layer>
       </Stage>
 
@@ -504,6 +607,7 @@ export default function CanvasStage() {
         <span className="w-1 h-1 rounded-full bg-line2" />
         <span>{doc.elements.length} layer{doc.elements.length === 1 ? "" : "s"}</span>
         {selection.length > 0 && <><span className="w-1 h-1 rounded-full bg-line2" /><span className="text-accent">{selection.length} selected</span></>}
+        {pageSelected && <><span className="w-1 h-1 rounded-full bg-line2" /><span className="text-accent">Page selected — drag frame to move, corners to resize</span></>}
       </div>
 
       {canPan && <div className="absolute top-4 left-1/2 -translate-x-1/2 text-[11px] font-bold text-bg bg-ink/85 rounded-full px-3 py-1.5 pointer-events-none">Pan mode — drag to move the canvas</div>}

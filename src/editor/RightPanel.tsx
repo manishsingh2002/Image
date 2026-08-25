@@ -22,10 +22,13 @@ export default function RightPanel() {
   const toggleGrid = useEditorStore((s) => s.toggleGrid);
   const toggleSafeZones = useEditorStore((s) => s.toggleSafeZones);
   const setEditingText = useEditorStore((s) => s.setEditingText);
+  const pageSelected = useEditorStore((s) => s.pageSelected);
+  const clearSelection = useEditorStore((s) => s.clearSelection);
   const toast = useAppStore((s) => s.toast);
 
   const [cropOpen, setCropOpen] = useState(false);
   const [resizeOpen, setResizeOpen] = useState(false);
+  const [pageW, setPageW] = useState<number | null>(null);
   const replaceRef = useRef<HTMLInputElement>(null);
 
   if (!doc) return null;
@@ -79,16 +82,42 @@ export default function RightPanel() {
     );
   }
 
-  // ── Canvas properties ──
+  // ── Canvas / page properties ──
   if (!one) {
-    const ratio = doc.width / doc.height;
+    const ratio = doc.height / doc.width;
     const ratioName = Math.abs(ratio - 1) < 0.02 ? "Square" : ratio > 1.3 ? "Landscape" : ratio < 0.75 ? "Portrait" : "Classic";
+    const pw = pageW ?? doc.width;
     return (
       <aside className="w-[264px] shrink-0 border-l border-line bg-surface p-4 overflow-y-auto">
-        <p className="text-[10.5px] font-bold uppercase tracking-wider text-faint">Canvas</p>
-        <div className="mt-3 p-3.5 rounded-xl border border-line bg-surface2/40">
-          <p className="font-display font-bold text-[17px] text-ink">{doc.width} × {doc.height}</p>
-          <p className="text-[11.5px] text-faint mt-0.5">{ratioName} · {doc.elements.length} element{doc.elements.length === 1 ? "" : "s"}</p>
+        <p className="text-[10.5px] font-bold uppercase tracking-wider text-faint">{pageSelected ? "Page selected" : "Canvas"}</p>
+
+        {pageSelected && (
+          <div className="mt-3 p-3.5 rounded-xl border border-accent/40 bg-accent/6 anim-pop">
+            <p className="text-[12.5px] font-bold text-ink">Whole banner selected</p>
+            <ul className="mt-2 space-y-1.5 text-[11.5px] text-sub leading-relaxed">
+              <li className="flex gap-1.5"><span className="text-accent font-bold">·</span>Drag the teal frame to move every layer at once</li>
+              <li className="flex gap-1.5"><span className="text-accent font-bold">·</span>Drag a corner handle to resize everything proportionally</li>
+              <li className="flex gap-1.5"><span className="text-accent font-bold">·</span>Arrow keys nudge the whole page (Shift = ×10)</li>
+            </ul>
+            <div className="flex items-end gap-2 mt-3">
+              <div className="flex-1">
+                <NumInput label="Scale to width" value={pw} min={100} max={8000} onChange={(v) => setPageW(Math.round(v))} />
+              </div>
+              <Button size="sm" className="mb-0.5" onClick={() => {
+                const w = Math.round(pw);
+                setDoc(smartResizeDoc(doc, w, Math.round(w * ratio)));
+                toast(`Page scaled to ${w} × ${Math.round(w * ratio)}.`, "success");
+              }}>Apply</Button>
+            </div>
+            <Button size="sm" variant="ghost" className="w-full mt-2" onClick={clearSelection}>Deselect page</Button>
+          </div>
+        )}
+
+        <div className={pageSelected ? "mt-3" : "mt-3"} >
+          <div className="p-3.5 rounded-xl border border-line bg-surface2/40">
+            <p className="font-display font-bold text-[17px] text-ink">{doc.width} × {doc.height}</p>
+            <p className="text-[11.5px] text-faint mt-0.5">{ratioName} · {doc.elements.length} element{doc.elements.length === 1 ? "" : "s"}</p>
+          </div>
         </div>
         <div className="mt-4 space-y-1">
           <Toggle checked={showGrid} onChange={toggleGrid} label="Show grid (100px)" />

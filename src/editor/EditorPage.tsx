@@ -78,12 +78,16 @@ export default function EditorPage() {
     if (mod && e.key.toLowerCase() === "v") { s.paste(); return; }
     if ((e.key === "Delete" || e.key === "Backspace") && s.selection.length) { e.preventDefault(); s.removeElements(s.selection); return; }
     if (e.key === "Escape") { s.clearSelection(); s.setEditingText(null); return; }
-    if (e.key.startsWith("Arrow") && s.selection.length) {
+    if (e.key.startsWith("Arrow") && (s.selection.length || s.pageSelected)) {
       e.preventDefault();
       const step = e.shiftKey ? 10 : 1;
       const dx = e.key === "ArrowLeft" ? -step : e.key === "ArrowRight" ? step : 0;
       const dy = e.key === "ArrowUp" ? -step : e.key === "ArrowDown" ? step : 0;
-      s.updateElements(s.selection, (el) => ({ ...el, x: el.x + dx, y: el.y + dy }));
+      if (s.pageSelected && s.doc) {
+        s.setDoc({ ...s.doc, elements: s.doc.elements.map((el) => ({ ...el, x: el.x + dx, y: el.y + dy })) });
+      } else {
+        s.updateElements(s.selection, (el) => ({ ...el, x: el.x + dx, y: el.y + dy }));
+      }
     }
   }, []);
   useEffect(() => {

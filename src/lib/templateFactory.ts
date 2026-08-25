@@ -295,10 +295,215 @@ const archAnnounce: Arch = (x) => {
   ];
 };
 
+// ── Trending archetypes ──
+const archGrid4: Arch = (x) => {
+  const { W, H, fs, pal, c } = x;
+  const m = 36 * fs, gap = 16 * fs;
+  const cw = (W - m * 2 - gap) / 2;
+  const ch = Math.min(cw, (H - m * 2 - gap - 130 * fs) / 2);
+  const x2 = m + cw + gap, y2 = m + ch + gap;
+  return [
+    el({ type: "image", x: m, y: m, width: cw, height: ch, src: x.photoSrc, name: "Photo 1" }),
+    el({ type: "image", x: x2, y: m, width: cw, height: ch, src: x.photoSrc, name: "Photo 2" }),
+    el({ type: "image", x: m, y: y2, width: cw, height: ch, src: x.photoSrc, name: "Photo 3" }),
+    el({ type: "rect", x: x2, y: y2, width: cw, height: ch, fill: pal.accent, name: "Stat panel" }),
+    txt(x2, y2 + ch / 2 - 120 * fs, cw, c.o || "2×", 120 * fs, { fontFamily: x.fonts.display, fontStyle: "bold", color: pal.bg, align: "center", lineHeight: 1, name: "Stat number" }),
+    txt(x2 + 24 * fs, y2 + ch / 2 + 24 * fs, cw - 48 * fs, c.a || "more saves this week", 26 * fs, { fontFamily: x.fonts.body, color: pal.bg, align: "center", lineHeight: 1.35, name: "Stat caption" }),
+    el({ type: "rect", x: m + 18 * fs, y: m + 18 * fs, width: 220 * fs, height: 48 * fs, radius: 24 * fs, fill: pal.bg, opacity: 0.92, name: "Chip" }),
+    txt(m + 18 * fs, m + 30 * fs, 220 * fs, ((c.l || "THE EDIT") as string).toUpperCase(), 20 * fs, { fontFamily: x.fonts.body, fontStyle: "bold", letterSpacing: 3 * fs, color: pal.ink, align: "center", name: "Chip text" }),
+    txt(m, y2 + ch + 30 * fs, cw * 2 + gap, c.s || "Four frames, one story. Full set on the profile.", 26 * fs, { fontFamily: x.fonts.body, color: pal.ink, lineHeight: 1.4, name: "Caption" }),
+  ];
+};
+
+const archTicket: Arch = (x) => {
+  const { W, H, fs, pal, c } = x;
+  const cw = Math.round(W * 0.72), ch = Math.round(H * 0.62);
+  const cx = (W - cw) / 2, cy = (H - ch) / 2;
+  const notchY = cy + ch * 0.66;
+  const bars = [4, 9, 4, 14, 4, 9, 14, 4, 9, 4];
+  let bx = cx + cw - 70 * fs - bars.reduce((a, b) => a + b + 8, 0) * fs;
+  return [
+    el({ type: "ellipse", x: cx - 230 * fs, y: cy - 260 * fs, width: 460 * fs, height: 460 * fs, fill: pal.soft, opacity: 0.55, name: "Halo" }),
+    el({ type: "rect", x: cx, y: cy, width: cw, height: ch, radius: 18 * fs, fill: pal.soft, name: "Ticket card", shadow: { color: "rgba(0,0,0,0.3)", blur: 44 * fs, offsetX: 0, offsetY: 16 * fs, opacity: 0.5 } }),
+    el({ type: "rect", x: cx + 14 * fs, y: cy + 14 * fs, width: cw - 28 * fs, height: ch - 28 * fs, radius: 12 * fs, fill: "transparent", stroke: pal.ink, strokeWidth: 2.5 * fs, dash: [10 * fs, 8 * fs], name: "Perforation" }),
+    el({ type: "ellipse", x: cx - 26 * fs, y: notchY - 26 * fs, width: 52 * fs, height: 52 * fs, fill: pal.bg, name: "Notch L" }),
+    el({ type: "ellipse", x: cx + cw - 26 * fs, y: notchY - 26 * fs, width: 52 * fs, height: 52 * fs, fill: pal.bg, name: "Notch R" }),
+    txt(cx, cy + 52 * fs, cw, ((c.l || "GOLDEN TICKET") as string).toUpperCase(), 22 * fs, { fontFamily: x.fonts.body, fontStyle: "bold", letterSpacing: 6 * fs, color: pal.muted, align: "center", name: "Label" }),
+    txt(cx, cy + ch * 0.15, cw, c.o || "50%", 150 * fs, { fontFamily: x.fonts.display, fontStyle: "bold", color: pal.ink, align: "center", lineHeight: 1, name: "Offer" }),
+    txt(cx, cy + ch * 0.15 + 148 * fs, cw, ((c.h || "OFF EVERYTHING") as string).toUpperCase(), 30 * fs, { fontFamily: x.fonts.body, fontStyle: "bold", letterSpacing: 4 * fs, color: pal.accent, align: "center", name: "Offer line" }),
+    el({ type: "line", x: cx + 60 * fs, y: notchY, width: cw - 120 * fs, height: 0, points: [0, 0, cw - 120 * fs, 0], stroke: pal.muted, strokeWidth: 2.5 * fs, dash: [2 * fs, 10 * fs], name: "Tear line" }),
+    txt(cx + 60 * fs, notchY + 28 * fs, cw * 0.5, ((c.a || "VALID THRU SUNDAY") as string).toUpperCase(), 20 * fs, { fontFamily: x.fonts.body, fontStyle: "bold", letterSpacing: 2 * fs, color: pal.muted, name: "Meta" }),
+    ...bars.map((bwi, i) => { const r = el({ type: "rect", x: bx, y: notchY + 24 * fs, width: bwi * fs, height: 58 * fs, fill: pal.ink, name: `Bar ${i + 1}` }); bx += (bwi + 8) * fs; return r; }),
+  ];
+};
+
+const archBrutal: Arch = (x) => {
+  const { W, H, fs, pal, c } = x;
+  const m = 30 * fs;
+  const lines = (c.h || "MAKE IT\nLOUD").split("\n");
+  const out: DesignElement[] = [
+    el({ type: "rect", x: m, y: m, width: W - m * 2, height: H - m * 2, fill: "transparent", stroke: pal.ink, strokeWidth: 7 * fs, name: "Frame" }),
+  ];
+  lines.forEach((ln, i) => {
+    const y = H * 0.16 + i * 132 * fs;
+    out.push(
+      txt(m + 63 * fs, y + 9 * fs, W - 170 * fs, ln.toUpperCase(), 116 * fs, { fontFamily: x.fonts.display, fontStyle: "bold", color: pal.accent, lineHeight: 0.95, name: `Shadow ${i + 1}` }),
+      txt(m + 54 * fs, y, W - 170 * fs, ln.toUpperCase(), 116 * fs, { fontFamily: x.fonts.display, fontStyle: "bold", color: pal.ink, lineHeight: 0.95, name: `Word ${i + 1}` }),
+    );
+  });
+  out.push(
+    txt(m + 54 * fs, H * 0.64, W * 0.6, c.s || "No filters. No apologies. Just the drop.", 27 * fs, { fontFamily: x.fonts.body, color: pal.ink, lineHeight: 1.45, name: "Caption" }),
+    el({ type: "rect", x: W * 0.55, y: H * 0.77, width: 330 * fs, height: 92 * fs, radius: 8 * fs, fill: pal.ink, rotation: -5, name: "Sticker" }),
+    txt(W * 0.55, y0sticker(H, fs), 330 * fs, ((c.cta || "GET IT") as string).toUpperCase(), 34 * fs, { fontFamily: x.fonts.display, color: pal.bg, align: "center", letterSpacing: 3 * fs, rotation: -5, name: "Sticker text" }),
+    el({ type: "ellipse", x: W - 200 * fs, y: 86 * fs, width: 96 * fs, height: 96 * fs, fill: pal.accent, name: "Dot" }),
+  );
+  return out;
+};
+const y0sticker = (H: number, fs: number) => H * 0.77 + 26 * fs;
+
+const archListicle: Arch = (x) => {
+  const { W, H, fs, pal, c } = x;
+  const m = 84 * fs;
+  const out: DesignElement[] = [
+    label(x, m, H * 0.09, W - m * 2, pal.muted),
+    txt(m, H * 0.13, W - m * 2, c.h || "Three habits of\ntop designers", 66 * fs, { fontFamily: x.fonts.display, fontStyle: "bold", color: pal.ink, lineHeight: 1.06, name: "Heading" }),
+  ];
+  const titles = [c.t1 || "Steal like a system", c.t2 || "Ship before ready", c.t3 || "Cut one more thing"];
+  titles.forEach((t, i) => {
+    const y = H * 0.40 + i * H * 0.155;
+    out.push(
+      el({ type: "ellipse", x: m, y, width: 78 * fs, height: 78 * fs, fill: i === 1 ? pal.ink : pal.accent, name: `Number ${i + 1}` }),
+      txt(m, y + 18 * fs, 78 * fs, `0${i + 1}`, 32 * fs, { fontFamily: x.fonts.display, fontStyle: "bold", color: pal.bg, align: "center", lineHeight: 1, name: `Digit ${i + 1}` }),
+      txt(m + 118 * fs, y + 6 * fs, W - m * 2 - 118 * fs, t, 34 * fs, { fontFamily: x.fonts.body, fontStyle: "bold", color: pal.ink, lineHeight: 1.3, name: `Tip ${i + 1}` }),
+      el({ type: "line", x: m, y: y + 106 * fs, width: W - m * 2, height: 0, points: [0, 0, W - m * 2, 0], stroke: pal.soft, strokeWidth: 2 * fs, name: `Rule ${i + 1}` }),
+    );
+  });
+  out.push(txt(m, H * 0.88, W - m * 2, ((c.cta || "Save this for later") as string).toUpperCase(), 24 * fs, { fontFamily: x.fonts.body, fontStyle: "bold", letterSpacing: 4 * fs, color: pal.accent, name: "CTA" }));
+  return out;
+};
+
+const archPodcast: Arch = (x) => {
+  const { W, H, fs, pal, c } = x;
+  const m = 76 * fs;
+  const wave = [46, 88, 128, 96, 60, 116, 72, 40];
+  return [
+    el({ type: "ellipse", x: W * 0.56, y: H * 0.08, width: 440 * fs, height: 440 * fs, fill: pal.soft, name: "Disc" }),
+    el({ type: "ellipse", x: W * 0.56 + 120 * fs, y: H * 0.08 + 120 * fs, width: 200 * fs, height: 200 * fs, fill: pal.accent, name: "Hub" }),
+    el({ type: "path", x: W * 0.56 + 190 * fs, y: H * 0.08 + 178 * fs, width: 60 * fs, height: 84 * fs, data: "M0 0 L60 42 L0 84 Z", fill: pal.bg, name: "Play" }),
+    el({ type: "rect", x: m, y: H * 0.54, width: 190 * fs, height: 52 * fs, radius: 26 * fs, fill: pal.accent, name: "Ep chip" }),
+    txt(m, H * 0.54 + 12 * fs, 190 * fs, ((c.l || "EP. 90") as string).toUpperCase(), 24 * fs, { fontFamily: x.fonts.body, fontStyle: "bold", letterSpacing: 2 * fs, color: pal.bg, align: "center", name: "Ep" }),
+    txt(m, H * 0.62, W * 0.66, c.h || "Pricing is\npsychology", 72 * fs, { fontFamily: x.fonts.display, fontStyle: "bold", color: pal.ink, lineHeight: 1.02, name: "Heading" }),
+    txt(m, H * 0.82, W * 0.55, c.a || "with Maren Holt · 42 min", 26 * fs, { fontFamily: x.fonts.body, color: pal.muted, name: "Host" }),
+    ...wave.map((wh, i) => el({ type: "rect", x: W - m - (wave.length - i) * 34 * fs, y: H * 0.88 - wh * fs, width: 16 * fs, height: wh * fs, radius: 8 * fs, fill: i % 2 ? pal.accent : pal.ink, opacity: i % 2 ? 1 : 0.3, name: `Wave ${i + 1}` })),
+  ];
+};
+
+const archCarousel: Arch = (x) => {
+  const { W, H, fs, pal, c } = x;
+  const m = 72 * fs, L = 44 * fs;
+  return [
+    el({ type: "rect", x: m, y: m, width: L, height: 7 * fs, fill: pal.ink, name: "Tick TL-h" }),
+    el({ type: "rect", x: m, y: m, width: 7 * fs, height: L, fill: pal.ink, name: "Tick TL-v" }),
+    el({ type: "rect", x: W - m - L, y: m, width: L, height: 7 * fs, fill: pal.ink, name: "Tick TR-h" }),
+    el({ type: "rect", x: W - m - 7 * fs, y: m, width: 7 * fs, height: L, fill: pal.ink, name: "Tick TR-v" }),
+    el({ type: "rect", x: m, y: H - m - 7 * fs, width: L, height: 7 * fs, fill: pal.ink, name: "Tick BL-h" }),
+    el({ type: "rect", x: m, y: H - m - L, width: 7 * fs, height: L, fill: pal.ink, name: "Tick BL-v" }),
+    el({ type: "rect", x: W - m - L, y: H - m - 7 * fs, width: L, height: 7 * fs, fill: pal.ink, name: "Tick BR-h" }),
+    el({ type: "rect", x: W - m - 7 * fs, y: H - m - L, width: 7 * fs, height: L, fill: pal.ink, name: "Tick BR-v" }),
+    txt(W * 0.32, H * 0.01, W * 0.62, c.o || "01", 380 * fs, { fontFamily: x.fonts.display, fontStyle: "bold", color: pal.ink, opacity: 0.1, lineHeight: 1, name: "Ghost number" }),
+    label(x, m + 30 * fs, H * 0.2, W - m * 2 - 60 * fs, pal.muted),
+    txt(m + 30 * fs, H * 0.26, W * 0.74, c.h || "Five design\nmyths, retired", 84 * fs, { fontFamily: x.fonts.display, fontStyle: "bold", color: pal.ink, lineHeight: 1.04, name: "Heading" }),
+    txt(m + 30 * fs, H * 0.6, W * 0.6, c.s || "Swipe through — each slide takes under ten seconds.", 28 * fs, { fontFamily: x.fonts.body, color: pal.muted, lineHeight: 1.5, name: "Description" }),
+    txt(m, H - 205 * fs, W - m - 120 * fs, ((c.cta || "SWIPE") as string).toUpperCase(), 40 * fs, { fontFamily: x.fonts.display, color: pal.ink, align: "right", letterSpacing: 4 * fs, name: "Swipe" }),
+    el({ type: "rect", x: W - m - 88 * fs, y: H - 185 * fs, width: 56 * fs, height: 10 * fs, fill: pal.accent, name: "Arrow shaft" }),
+    el({ type: "path", x: W - m - 38 * fs, y: H - 203 * fs, width: 34 * fs, height: 46 * fs, data: "M0 0 L34 23 L0 46 Z", fill: pal.accent, name: "Arrow head" }),
+    ...[0, 1, 2, 3, 4].map((i) => el({ type: "ellipse", x: W / 2 - 70 * fs + i * 35 * fs, y: H - 122 * fs, width: (i === 0 ? 18 : 12) * fs, height: (i === 0 ? 18 : 12) * fs, fill: i === 0 ? pal.accent : pal.ink, opacity: i === 0 ? 1 : 0.25, name: `Dot ${i + 1}` })),
+  ];
+};
+
+const archCountdown: Arch = (x) => {
+  const { W, H, fs, pal, c } = x;
+  const r = 250 * fs;
+  const C = Math.PI * 2 * r;
+  const cy = H * 0.32;
+  return [
+    label(x, 90 * fs, H * 0.09, W - 180 * fs, pal.muted, "center"),
+    el({ type: "ellipse", x: W / 2 - r, y: cy - r, width: r * 2, height: r * 2, fill: "transparent", stroke: pal.soft, strokeWidth: 24 * fs, name: "Ring track" }),
+    el({ type: "ellipse", x: W / 2 - r, y: cy - r, width: r * 2, height: r * 2, fill: "transparent", stroke: pal.accent, strokeWidth: 24 * fs, dash: [C * 0.72, C], rotation: -90, name: "Ring progress" }),
+    txt(W / 2 - r, cy - 118 * fs, r * 2, c.o || "3", 226 * fs, { fontFamily: x.fonts.display, fontStyle: "bold", color: pal.ink, align: "center", lineHeight: 1, name: "Number" }),
+    txt(90 * fs, cy + r + 58 * fs, W - 180 * fs, ((c.h || "DAYS LEFT") as string).toUpperCase(), 44 * fs, { fontFamily: x.fonts.body, fontStyle: "bold", letterSpacing: 10 * fs, color: pal.ink, align: "center", name: "Unit" }),
+    txt(90 * fs, cy + r + 128 * fs, W - 180 * fs, c.a || "Doors open Friday, 6 PM", 27 * fs, { fontFamily: x.fonts.body, color: pal.muted, align: "center", name: "Meta" }),
+    ...ctaPill(x, W / 2, H * 0.87, 320 * fs, 78 * fs, true),
+  ];
+};
+
+const archCompare: Arch = (x) => {
+  const { W, H, fs, pal, c } = x;
+  const half = W / 2;
+  return [
+    el({ type: "image", x: 0, y: 0, width: half, height: H, src: x.photoSrc, name: "Before photo" }),
+    el({ type: "rect", x: 0, y: 0, width: half, height: H, fill: "#0a0a0a", opacity: 0.42, name: "Before dim" }),
+    el({ type: "image", x: half, y: 0, width: half, height: H, src: x.photoSrc, name: "After photo" }),
+    el({ type: "rect", x: half - 4 * fs, y: 0, width: 8 * fs, height: H, fill: "#ffffff", name: "Divider" }),
+    el({ type: "rect", x: 36 * fs, y: 42 * fs, width: 190 * fs, height: 54 * fs, radius: 27 * fs, fill: "rgba(10,10,10,0.72)", name: "Before chip" }),
+    txt(36 * fs, 55 * fs, 190 * fs, "BEFORE", 24 * fs, { fontFamily: x.fonts.body, fontStyle: "bold", letterSpacing: 3 * fs, color: "#ffffff", align: "center", name: "Before label" }),
+    el({ type: "rect", x: half + 30 * fs, y: 42 * fs, width: 170 * fs, height: 54 * fs, radius: 27 * fs, fill: pal.accent, name: "After chip" }),
+    txt(half + 30 * fs, 55 * fs, 170 * fs, "AFTER", 24 * fs, { fontFamily: x.fonts.body, fontStyle: "bold", letterSpacing: 3 * fs, color: pal.bg, align: "center", name: "After label" }),
+    el({ type: "rect", x: 0, y: H - 190 * fs, width: W, height: 190 * fs, fill: pal.bg, name: "Footer" }),
+    txt(72 * fs, H - 158 * fs, W - 380 * fs, c.h || "Same room. New light.", 52 * fs, { fontFamily: x.fonts.display, fontStyle: "bold", color: pal.ink, lineHeight: 1.1, name: "Heading" }),
+    txt(72 * fs, H - 86 * fs, W - 380 * fs, ((c.cta || "Book a consult") as string).toUpperCase(), 22 * fs, { fontFamily: x.fonts.body, fontStyle: "bold", letterSpacing: 4 * fs, color: pal.accent, name: "CTA" }),
+    el({ type: "ellipse", x: W - 210 * fs, y: H - 148 * fs, width: 96 * fs, height: 96 * fs, fill: pal.soft, name: "Dot" }),
+  ];
+};
+
+const archMenu: Arch = (x) => {
+  const { W, H, fs, pal, c } = x;
+  const m = 44 * fs;
+  const items = (c.items || "House Special|18; Garden Plate|14; Sunday Roast|26; Espresso|4").split(";").map((s) => s.trim().split("|"));
+  const out: DesignElement[] = [
+    el({ type: "rect", x: m, y: m, width: W - m * 2, height: H - m * 2, fill: "transparent", stroke: pal.ink, strokeWidth: 2.5 * fs, name: "Outer frame" }),
+    el({ type: "rect", x: m + 14 * fs, y: m + 14 * fs, width: W - (m + 14 * fs) * 2, height: H - (m + 14 * fs) * 2, fill: "transparent", stroke: pal.muted, strokeWidth: 1.5 * fs, name: "Inner frame" }),
+    txt(0, H * 0.11, W, ((c.l || "EST. 2019") as string).toUpperCase(), 20 * fs, { fontFamily: x.fonts.body, fontStyle: "bold", letterSpacing: 6 * fs, color: pal.muted, align: "center", name: "Est" }),
+    txt(60 * fs, H * 0.15, W - 120 * fs, c.h || "The Evening Menu", 60 * fs, { fontFamily: x.fonts.display, fontStyle: "italic", color: pal.ink, align: "center", lineHeight: 1.1, name: "Venue" }),
+    el({ type: "line", x: W / 2 - 60 * fs, y: H * 0.265, width: 120 * fs, height: 0, points: [0, 0, 120 * fs, 0], stroke: pal.accent, strokeWidth: 3.5 * fs, name: "Ornament" }),
+  ];
+  items.slice(0, 4).forEach((it, i) => {
+    const y = H * 0.35 + i * H * 0.125;
+    out.push(
+      txt(110 * fs, y, W * 0.48, it[0] || "Special", 34 * fs, { fontFamily: x.fonts.body, color: pal.ink, name: `Item ${i + 1}` }),
+      el({ type: "line", x: W * 0.60, y: y + 26 * fs, width: W * 0.2, height: 0, points: [0, 0, W * 0.2, 0], stroke: pal.muted, strokeWidth: 2 * fs, dash: [2 * fs, 9 * fs], name: `Leader ${i + 1}` }),
+      txt(W - 230 * fs, y, 120 * fs, it[1] || "—", 34 * fs, { fontFamily: x.fonts.display, fontStyle: "bold", color: pal.accent, align: "right", name: `Price ${i + 1}` }),
+    );
+  });
+  out.push(txt(90 * fs, H * 0.875, W - 180 * fs, c.s || "Seasonal produce · menu changes weekly", 24 * fs, { fontFamily: x.fonts.body, fontStyle: "italic", color: pal.muted, align: "center", name: "Footer" }));
+  return out;
+};
+
+const archPoll: Arch = (x) => {
+  const { W, H, fs, pal, c } = x;
+  const half = H / 2;
+  return [
+    el({ type: "image", x: 0, y: 0, width: W, height: half, src: x.photoSrc, name: "Option A photo" }),
+    el({ type: "rect", x: 0, y: 0, width: W, height: half, fill: "#0a0a0a", opacity: 0.18, name: "A tint" }),
+    el({ type: "image", x: 0, y: half, width: W, height: half, src: x.photoSrc, name: "Option B photo" }),
+    el({ type: "rect", x: 0, y: half, width: W, height: half, fill: "#0a0a0a", opacity: 0.45, name: "B tint" }),
+    el({ type: "rect", x: 44 * fs, y: 150 * fs, width: 170 * fs, height: 60 * fs, radius: 30 * fs, fill: pal.accent, name: "This chip" }),
+    txt(44 * fs, 164 * fs, 170 * fs, "THIS", 28 * fs, { fontFamily: x.fonts.display, color: pal.bg, align: "center", letterSpacing: 3 * fs, name: "This label" }),
+    el({ type: "rect", x: 44 * fs, y: H - 260 * fs, width: 170 * fs, height: 60 * fs, radius: 30 * fs, fill: "#ffffff", opacity: 0.94, name: "That chip" }),
+    txt(44 * fs, H - 246 * fs, 170 * fs, "THAT", 28 * fs, { fontFamily: x.fonts.display, color: "#141517", align: "center", letterSpacing: 3 * fs, name: "That label" }),
+    el({ type: "ellipse", x: W / 2 - 105 * fs, y: half - 105 * fs, width: 210 * fs, height: 210 * fs, fill: pal.bg, name: "VS disc", shadow: { color: "rgba(0,0,0,0.3)", blur: 36 * fs, offsetX: 0, offsetY: 10 * fs, opacity: 0.6 } }),
+    txt(W / 2 - 105 * fs, half - 40 * fs, 210 * fs, "OR", 60 * fs, { fontFamily: x.fonts.display, fontStyle: "bold", color: pal.ink, align: "center", lineHeight: 1, name: "VS" }),
+    txt(90 * fs, H - 150 * fs, W - 180 * fs, c.s || "Reply with your pick — results on Friday.", 26 * fs, { fontFamily: x.fonts.body, color: "#ffffff", align: "center", name: "Caption" }),
+  ];
+};
+
 const ARCHS: Record<string, Arch> = {
   split: archSplit, fullbleed: archFullbleed, badge: archBadge, minimal: archMinimal,
   editorial: archEditorial, frame: archFrame, quote: archQuote, thumb: archThumb,
   stack: archStack, diagonal: archDiagonal, product: archProduct, announce: archAnnounce,
+  grid4: archGrid4, ticket: archTicket, brutal: archBrutal, listicle: archListicle,
+  podcast: archPodcast, carousel: archCarousel, countdown: archCountdown, compare: archCompare,
+  menu: archMenu, poll: archPoll,
 };
 
 // ─── Spec table → 90 templates ─────────────────────────────────────────────
@@ -419,6 +624,38 @@ const S: Spec[] = [
   ["Podcast Episode", "Events", "Business", "youtube-thumbnail", "thumb", 11, 1, { l: "Podcast 88", h: "PRICING\nIS\nPSYCHOLOGY", s: "With Maren Holt", cta: "" }, "bistro"],
   ["Gaming Setup", "Technology", "Electronics", "youtube-thumbnail", "thumb", 5, 1, { l: "Setup", h: "DREAM\nSTUDIO\n2026", s: "Every single item listed", cta: "" }, "tech"],
   ["Top 10 List", "Marketing", "Education", "youtube-thumbnail", "thumb", 8, 1, { l: "Top 10", h: "CAMERAS\nRANKED", s: "Budget to flagship", cta: "" }, "tech"],
+
+  // ── Trending drop: grids, tickets, brutal, listicles, podcasts, carousels, countdowns, comparisons, menus, polls (30) ──
+  ["Lookbook: Four Frames", "Fashion", "Fashion", "instagram-post", "grid4", 7, 6, { l: "The Edit", o: "48", a: "pieces in the capsule", s: "Four frames, one mood. Full lookbook at the link." }, "fashion"],
+  ["Chef's Picks Grid", "Food", "Restaurant", "instagram-post", "grid4", 0, 3, { l: "Chef's Picks", o: "4.9", a: "average plate rating", s: "This week's most-ordered, side by side." }, "burger"],
+  ["Travel Postcards", "Travel", "Travel", "pinterest-pin", "grid4", 2, 4, { l: "Postcards", o: "12", a: "stops, one island", s: "Save this route for your next escape." }, "travel", true],
+  ["Golden Ticket Drop", "Sale", "Fashion", "instagram-post", "ticket", 11, 1, { l: "Members Only", o: "50%", h: "OFF EVERYTHING", a: "VALID THRU SUNDAY" }, "fashion", true],
+  ["Admit One: Live Show", "Events", "Events", "instagram-post", "ticket", 5, 1, { l: "Admit One", o: "LIVE", h: "JAZZ AFTER DARK", a: "SAT · DOORS 8 PM" }, "bistro"],
+  ["First Order Coupon", "Sale", "Restaurant", "facebook-post", "ticket", 13, 4, { l: "Welcome Treat", o: "20%", h: "OFF FIRST ORDER", a: "NEW CUSTOMERS ONLY" }, "burger"],
+  ["Loud Drop Poster", "Marketing", "Fashion", "instagram-post", "brutal", 8, 1, { h: "MAKE IT\nLOUD", s: "The summer drop lands Friday. Zero restocks.", cta: "Get it" }, "fashion"],
+  ["No Excuses Poster", "Fitness", "Fitness", "instagram-post", "brutal", 12, 3, { h: "SHOW UP\nAGAIN", s: "Motivation fades. The 6 AM class doesn't.", cta: "Book it" }, "fitness"],
+  ["Everything Must Go", "Sale", "Furniture", "instagram-post", "brutal", 13, 1, { h: "EVERY-\nTHING GOES", s: "Floor samples, open box, final markdowns.", cta: "This week" }],
+  ["3 Habits of Top Designers", "Education", "Education", "instagram-post", "listicle", 9, 5, { l: "Studio Notes", h: "Three habits of\ntop designers", t1: "Steal like a system", t2: "Ship before ready", t3: "Cut one more thing", cta: "Save this" }],
+  ["5-Minute Morning Reset", "Fitness", "Fitness", "instagram-post", "listicle", 10, 4, { l: "Daily Reset", h: "A five-minute\nmorning reset", t1: "Water before caffeine", t2: "Ten slow breaths", t3: "One line of intention", cta: "Try tomorrow" }],
+  ["Money Rules to Live By", "Education", "Finance", "instagram-post", "listicle", 0, 2, { l: "Money 101", h: "Three rules that\nbeat any hack", t1: "Pay yourself on day one", t2: "Automate the boring parts", t3: "Never negotiate scared", cta: "Share this" }, undefined, true],
+  ["Podcast Episode 90", "Events", "Business", "instagram-post", "podcast", 12, 5, { l: "Ep. 90", h: "Pricing is\npsychology", a: "with Maren Holt · 42 min", cta: "Listen" }, undefined, true],
+  ["Audio Series Launch", "Business", "Technology", "instagram-post", "podcast", 2, 0, { l: "New Series", h: "Shipping\nin Public", a: "eight episodes · weekly", cta: "Subscribe" }],
+  ["Carousel Cover: Design Myths", "Education", "Education", "instagram-post", "carousel", 3, 5, { l: "Carousel · 6 slides", o: "01", h: "Five design\nmyths, retired", s: "Swipe through — each slide takes under ten seconds.", cta: "SWIPE" }, undefined, true],
+  ["Carousel: Morning Routine", "Fitness", "Fitness", "instagram-post", "carousel", 10, 4, { l: "Wellness · 5 slides", o: "01", h: "A calmer\n7 AM", s: "Small inputs, compounding mornings. Swipe for the stack.", cta: "SWIPE" }],
+  ["Carousel: Brand Voice", "Personal Branding", "Business", "instagram-post", "carousel", 9, 5, { l: "Branding · 7 slides", o: "01", h: "Sound like\nyourself", s: "A practical voice audit you can run this afternoon.", cta: "SWIPE" }],
+  ["Launch Countdown", "Marketing", "Electronics", "instagram-post", "countdown", 12, 5, { l: "Launch Week", o: "3", h: "DAYS LEFT", a: "Aria ANC · Thursday 10 AM", cta: "Remind me" }, "tech"],
+  ["Sale Ends In…", "Sale", "Beauty", "instagram-story", "countdown", 8, 1, { l: "Final Stretch", o: "1", h: "DAY LEFT", a: "Code GLOW ends at midnight", cta: "Use code" }, "beauty"],
+  ["Event Countdown", "Events", "Events", "instagram-post", "countdown", 5, 2, { l: "Save the Evening", o: "6", h: "DAYS TO GO", a: "Jazz After Dark · Sat 8 PM", cta: "Get tickets" }, "bistro"],
+  ["Before & After: Renovation", "Business", "Real Estate", "instagram-post", "compare", 9, 0, { h: "Same room. New light.", cta: "Book a consult" }, "house", true],
+  ["Glow Up: 30 Days", "Fitness", "Fitness", "instagram-post", "compare", 2, 3, { h: "Thirty days, zero shortcuts.", cta: "Start yours" }, "fitness"],
+  ["Skin Reset Results", "Beauty", "Beauty", "instagram-post", "compare", 10, 4, { h: "Week one vs. week six.", cta: "Shop the serum" }, "beauty"],
+  ["Dinner Menu Board", "Food", "Restaurant", "instagram-post", "menu", 0, 2, { l: "Est. 2019", h: "The Evening Menu", items: "Truffle Gnocchi|24; Wood-Fired Ribeye|42; Charred Leeks|16; Basque Cheesecake|12", s: "Seasonal produce · menu changes weekly" }, undefined, true],
+  ["Cafe Price List", "Food", "Restaurant", "instagram-post", "menu", 1, 2, { l: "Roasted Weekly", h: "The Coffee List", items: "Espresso|3.5; Flat White|4.5; Pour Over|6; Cold Brew|5.5", s: "Single origins rotate every Monday" }],
+  ["Cocktail Hour Menu", "Food", "Restaurant", "instagram-story", "menu", 11, 2, { l: "5 – 7 PM", h: "Cocktail Hour", items: "Negroni Classico|12; Smoked Paloma|14; Garden Spritz|11; Zero Proof|8", s: "Two-for-one on classics, every weekday" }],
+  ["This or That: Travel", "Travel", "Travel", "instagram-story", "poll", 2, 4, { s: "Reply with your pick — results on Friday." }, "travel"],
+  ["This or That: Sneakers", "Fashion", "Fashion", "instagram-story", "poll", 12, 1, { s: "Left or right? Drop your vote below." }, "fashion"],
+  ["Reel Cover: Bold Title", "Fitness", "Fitness", "reel-cover", "thumb", 13, 1, { l: "Reel", h: "5 FORM\nFIXES\nYOU NEED", s: "Save this one", cta: "" }, "fitness"],
+  ["Reel Cover: Tutorial", "Beauty", "Beauty", "reel-cover", "thumb", 10, 4, { l: "Tutorial", h: "GLASS SKIN\nIN 4\nSTEPS", s: "Full routine inside", cta: "" }, "beauty"],
 ];
 
 // ─── Build templates ────────────────────────────────────────────────────────

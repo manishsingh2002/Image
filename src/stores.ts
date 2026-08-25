@@ -201,6 +201,7 @@ interface EditorState {
   designId: string | null;
   doc: DesignDocument | null;
   selection: string[];
+  pageSelected: boolean;
   past: DesignDocument[];
   future: DesignDocument[];
   lastPush: number;
@@ -210,6 +211,7 @@ interface EditorState {
   showSafeZones: boolean;
   saveState: "idle" | "saving" | "saved";
   editingTextId: string | null;
+  selectPage: () => void;
 
   load: (meta: DesignMeta) => void;
   unload: () => void;
@@ -233,11 +235,13 @@ interface EditorState {
 }
 
 export const useEditorStore = create<EditorState>()((set, get) => ({
-  designId: null, doc: null, selection: [], past: [], future: [], lastPush: 0,
+  designId: null, doc: null, selection: [], pageSelected: false, past: [], future: [], lastPush: 0,
   zoom: 1, tool: "select", showGrid: false, showSafeZones: true, saveState: "idle", editingTextId: null,
 
-  load: (meta) => set({ designId: meta.id, doc: meta.doc, selection: [], past: [], future: [], zoom: 1, saveState: "idle", editingTextId: null }),
-  unload: () => set({ designId: null, doc: null, selection: [], past: [], future: [], editingTextId: null }),
+  selectPage: () => set({ pageSelected: true, selection: [] }),
+
+  load: (meta) => set({ designId: meta.id, doc: meta.doc, selection: [], pageSelected: false, past: [], future: [], zoom: 1, saveState: "idle", editingTextId: null }),
+  unload: () => set({ designId: null, doc: null, selection: [], pageSelected: false, past: [], future: [], editingTextId: null }),
 
   setDoc: (doc, history = true) => {
     const s = get();
@@ -275,8 +279,8 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
   },
 
   select: (ids, additive = false) =>
-    set((s) => ({ selection: additive ? Array.from(new Set([...s.selection, ...ids])) : ids })),
-  clearSelection: () => set({ selection: [] }),
+    set((s) => ({ pageSelected: false, selection: additive ? Array.from(new Set([...s.selection, ...ids])) : ids })),
+  clearSelection: () => set({ selection: [], pageSelected: false }),
   setEditingText: (id) => set({ editingTextId: id }),
 
   undo: () => {
