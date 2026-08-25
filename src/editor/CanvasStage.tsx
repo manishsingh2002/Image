@@ -65,18 +65,23 @@ const cacheRefFor = (filters: unknown) => (node: Konva.Image | null) => {
 // ─── One element node (memoized — never re-renders during drags) ───────────
 interface NodeProps {
   e: DesignElement; selected: boolean; interactive: boolean; editing: boolean;
+  canvasW: number; canvasH: number;
   onSelect: (id: string, additive: boolean) => void;
   onDblClick: (id: string) => void;
   onCommit: (node: Konva.Node) => void;
   onSnap: (node: Konva.Node) => void;
 }
 
-const ElementNode = memo(function ElementNode({ e, selected, interactive, editing, onSelect, onDblClick, onCommit, onSnap }: NodeProps) {
+const ElementNode = memo(function ElementNode({ e, selected, interactive, editing, canvasW, canvasH, onSelect, onDblClick, onCommit, onSnap }: NodeProps) {
   const { img, failed } = useLoadedImage(e.type === "image" ? e.src : undefined);
   const cx = e.width / 2, cy = e.height / 2;
+  // Full-bleed shapes/photos act as the page background: still selectable and
+  // editable (panel, transformer, crop) but never accidentally dragged, so a
+  // near-miss on a heading can't send the whole card sliding across the screen.
+  const fullBleed = e.type !== "text" && e.width >= canvasW * 0.98 && e.height >= canvasH * 0.98;
   const common = {
     id: e.id, name: e.id,
-    draggable: interactive && !e.locked,
+    draggable: interactive && !e.locked && !fullBleed,
     listening: interactive,
     opacity: editing ? 0 : e.opacity,
     rotation: e.rotation,
@@ -174,6 +179,7 @@ const ElementNode = memo(function ElementNode({ e, selected, interactive, editin
   return null;
 }, (a, b) =>
   a.e === b.e && a.selected === b.selected && a.interactive === b.interactive && a.editing === b.editing &&
+  a.canvasW === b.canvasW && a.canvasH === b.canvasH &&
   a.onSelect === b.onSelect && a.onDblClick === b.onDblClick && a.onCommit === b.onCommit && a.onSnap === b.onSnap
 );
 
@@ -241,12 +247,18 @@ export default function CanvasStage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [docKey, size.w === 0]);
 
-  // Space-to-pan
+  // Space-to-pan (reset on blur/pointer-cancel so the modifier can never get stuck)
   useEffect(() => {
     const dn = (e: KeyboardEvent) => { if (e.code === "Space" && !(e.target instanceof HTMLInputElement) && !(e.target instanceof HTMLTextAreaElement)) { e.preventDefault(); setSpace(true); } };
     const up = (e: KeyboardEvent) => { if (e.code === "Space") setSpace(false); };
+    const reset = () => setSpace(false);
     window.addEventListener("keydown", dn); window.addEventListener("keyup", up);
-    return () => { window.removeEventListener("keydown", dn); window.removeEventListener("keyup", up); };
+    window.addEventListener("blur", reset);
+    window.addEventListener("pointercancel", reset);
+    return () => {
+      window.removeEventListener("keydown", dn); window.removeEventListener("keyup", up);
+      window.removeEventListener("blur", reset); window.removeEventListener("pointercancel", reset);
+    };
   }, []);
 
   // Transformer attach (nodes resolved by Konva id)
@@ -475,7 +487,7 @@ export default function CanvasStage() {
         x={pos.x} y={pos.y}
         draggable={canPan}
         onDragStart={() => { panRef.current = { dragging: true }; }}
-        onDragEnd={(e) => { setPos({ x: e.target.x(), y: e.target.y() }); }}
+        onDragEnd={(e) => { if (e.target === e.target.getStage()) setPos({ x: e.target.x(), y: e.target.y() }); }}
         onWheel={(e) => {
           e.evt.preventDefault();
           const p = stageRef.current?.getPointerPosition();
@@ -525,6 +537,7 @@ export default function CanvasStage() {
               selected={selection.includes(e.id)}
               interactive={!e.locked}
               editing={editingTextId === e.id}
+              canvasW={doc.width} canvasH={doc.height}
               onSelect={onSelect}
               onDblClick={onDblClick}
               onCommit={commitNode}
