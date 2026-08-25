@@ -5,21 +5,43 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages-deploy
+  cancel-in-progress: true
+
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
-      - name: Use Node.js
+
+      - name: Use Node.js 18
         uses: actions/setup-node@v4
         with:
           node-version: '18'
+
       - name: Install dependencies (skip optional native bindings)
         run: npm ci --no-optional
+
       - name: Build
-        run: npm run build
-      - name: Deploy to gh-pages
+        run: npm run build --if-present
+
+      - name: Verify build output
+        run: |
+          if [ ! -d "dist" ]; then
+            echo "No dist directory found after build" >&2
+            ls -la
+            exit 1
+          fi
+
+      - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
