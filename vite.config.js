@@ -3,7 +3,9 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
 export default defineConfig({
-  base: '/image/',
+  // Use a relative base so built assets are referenced relative to index.html.
+  // This avoids wrong absolute paths like "/image/..." and works for GitHub Pages.
+  base: './',
   plugins: [react(), tailwindcss()],
   server: {
     host: "0.0.0.0",
