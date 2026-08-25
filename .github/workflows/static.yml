@@ -17,18 +17,23 @@ concurrency:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Use Node.js 18
+      - name: Use Node.js 22
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '22'
 
-      - name: Install dependencies (skip optional native bindings)
-        run: npm ci --no-optional
+      - name: Workaround: remove package-lock and node_modules (fix optional deps bug)
+        run: |
+          echo "Removing package-lock.json and node_modules to avoid npm optional-deps bug"
+          rm -f package-lock.json
+          rm -rf node_modules
+
+      - name: Install dependencies (npm install)
+        run: npm install --no-audit --no-fund --legacy-peer-deps
 
       - name: Build
         run: npm run build --if-present
