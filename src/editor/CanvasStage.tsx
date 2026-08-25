@@ -1,12 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Stage, Layer, Rect, Ellipse, Line, Path, Text as KText, Image as KImage, Transformer } from "react-konva";
 import Konva from "konva";
 import type { DesignElement, GradientSpec } from "../types";
 import { useAssetsStore, useEditorStore } from "../stores";
-import { clamp, coverCrop, loadImage, uid } from "../lib/utils";
+import { clamp, loadImage, uid } from "../lib/utils";
 import { platformById } from "../lib/constants";
-
-interface GuideLines { v: number[]; h: number[]; }
 
 // ─── Image hook with load state ─────────────────────────────────────────────
 function useLoadedImage(src?: string) {
@@ -14,7 +12,7 @@ function useLoadedImage(src?: string) {
   useEffect(() => {
     let live = true;
     if (!src) { setImg(null); return; }
-    loadImage(src).then((i) => live && setImg(i)).catch(() => live && setImg(null));
+    loadImage(src).then((i) => { if (live) setImg(i); }).catch(() => { if (live) setImg(null); });
     return () => { live = false; };
   }, [src]);
   return img;
@@ -41,36 +39,41 @@ function fillProps(fill: DesignElement["fill"], w: number, h: number): Record<st
   };
 }
 
-// ─── One element node ───────────────────────────────────────────────────────
-function ElementNode({ e, selected, interactive, onSelect, onDblClick, onDragEndCb, onTransformEndCb, onDragMoveSnap }: {
-  e: DesignElement; selected: boolean; interactive: boolean;
-  onSelect: (additive: boolean) => void;
-  onDblClick: () => void;
-  onDragEndCb: (node: Konva.Node) => void;
-  onTransformEndCb: (node: Konva.Node) => void;
-  onDragMoveSnap: (node: Konva.Node) => void;
-}) {
+// ─── One element node (memoized — never re-renders during drags) ───────────
+interface NodeProps {
+  e: DesignElement; selected: boolean; interactive: boolean; editing: boolean;
+  onSelect: (id: string, additive: boolean) => void;
+  onDblClick: (id: string) => void;
+  onCommit: (node: Konva.Node) => void;
+  onSnap: (node: Konva.Node) => void;
+}
+
+const ElementNode = memo(function ElementNode({ e, selected, interactive, editing, onSelect, onDblClick, onCommit, onSnap }: NodeProps) {
   const img = useLoadedImage(e.type === "image" ? e.src : undefined);
   const cx = e.width / 2, cy = e.height / 2;
   const common = {
     id: e.id, name: e.id,
     draggable: interactive && !e.locked,
     listening: interactive,
-    opacity: e.opacity,
+    opacity: editing ? 0 : e.opacity,
     rotation: e.rotation,
+    dragDistance: 2,
     globalCompositeOperation: e.blend && e.blend !== "source-over" ? (e.blend as never) : undefined,
     shadowColor: e.shadow?.blur ? e.shadow.color : undefined,
     shadowBlur: e.shadow?.blur || undefined,
     shadowOffsetX: e.shadow?.blur ? e.shadow.offsetX : undefined,
     shadowOffsetY: e.shadow?.blur ? e.shadow.offsetY : undefined,
     shadowOpacity: e.shadow?.blur ? e.shadow.opacity : undefined,
-    onClick: (ev: Konva.KonvaEventObject<MouseEvent>) => { ev.cancelBubble = true; onSelect(ev.evt.shiftKey); },
-    onTap: (ev: Konva.KonvaEventObject<TouchEvent>) => { ev.cancelBubble = true; onSelect(false); },
-    onDblClick: () => onDblClick(),
-    onDblTap: () => onDblClick(),
-    onDragMove: (ev: Konva.KonvaEventObject<DragEvent>) => { if (selected) onDragMoveSnap(ev.target); },
-    onDragEnd: (ev: Konva.KonvaEventObject<DragEvent>) => onDragEndCb(ev.target),
-    onTransformEnd: (ev: Konva.KonvaEventObject<Event>) => onTransformEndCb(ev.target),
+    // Select on press (not on release) so the transformer + snapping are live immediately
+    onMouseDown: (ev: Konva.KonvaEventObject<MouseEvent>) => { ev.cancelBubble = true; onSelect(e.id, ev.evt.shiftKey); },
+    onTouchStart: (ev: Konva.KonvaEventObject<TouchEvent>) => { ev.cancelBubble = true; onSelect(e.id, false); },
+    onClick: (ev: Konva.KonvaEventObject<MouseEvent>) => { ev.cancelBubble = true; onSelect(e.id, ev.evt.shiftKey); },
+    onTap: (ev: Konva.KonvaEventObject<TouchEvent>) => { ev.cancelBubble = true; onSelect(e.id, false); },
+    onDblClick: () => onDblClick(e.id),
+    onDblTap: () => onDblClick(e.id),
+    onDragMove: (ev: Konva.KonvaEventObject<DragEvent>) => { if (selected) onSnap(ev.target); },
+    onDragEnd: (ev: Konva.KonvaEventObject<DragEvent>) => onCommit(ev.target),
+    onTransformEnd: (ev: Konva.KonvaEventObject<Event>) => onCommit(ev.target),
   };
 
   if (e.type === "rect") {
@@ -85,7 +88,7 @@ function ElementNode({ e, selected, interactive, onSelect, onDblClick, onDragEnd
   }
   if (e.type === "line") {
     return <Line x={e.x} y={e.y} points={e.points || [0, 0, e.width, 0]} stroke={e.stroke || "#111"}
-      strokeWidth={e.strokeWidth || 2} dash={e.dash} lineCap="round" hitStrokeWidth={14} {...common} />;
+      strokeWidth={e.strokeWidth || 2} dash={e.dash} lineCap="round" hitStrokeWidth={16} {...common} />;
   }
   if (e.type === "path") {
     return <Path x={e.x} y={e.y} data={e.data || ""} perfectDrawEnabled={false}
@@ -114,7 +117,7 @@ function ElementNode({ e, selected, interactive, onSelect, onDblClick, onDragEnd
     ] as never) : undefined;
     return (
       <KImage x={e.x + cx} y={e.y + cy} offset={{ x: cx, y: cy }} width={e.width} height={e.height}
-        image={img || undefined} cornerRadius={e.radius || 0}
+        image={img || undefined}
         crop={e.crop ? { x: e.crop.sx, y: e.crop.sy, width: e.crop.sw, height: e.crop.sh } : undefined}
         filters={filters}
         brightness={f?.brightness || 0} contrast={(f?.contrast || 0) * 100} saturation={f?.saturation || 0} blurRadius={f?.blur || 0}
@@ -122,9 +125,11 @@ function ElementNode({ e, selected, interactive, onSelect, onDblClick, onDragEnd
           if (!node) return;
           if (filters && !node.isCached()) node.cache();
           if (!filters && node.isCached()) node.clearCache();
+          // Rounded-corner clipping, kept in sync imperatively (also cleared when radius → 0)
+          const clip = node as unknown as { clipFunc(f: ((ctx: CanvasRenderingContext2D) => void) | null): void };
           if (e.radius && e.radius > 0) {
-            (node as unknown as { clipFunc(f: (ctx: CanvasRenderingContext2D) => void): void }).clipFunc((ctx: CanvasRenderingContext2D) => {
-              const w = e.width, h = e.height, r = Math.min(e.radius!, w / 2, h / 2);
+            const w = e.width, h = e.height, r = Math.min(e.radius, w / 2, h / 2);
+            clip.clipFunc((ctx: CanvasRenderingContext2D) => {
               ctx.beginPath();
               ctx.moveTo(-w / 2 + r, -h / 2);
               ctx.arcTo(w / 2, -h / 2, w / 2, h / 2, r);
@@ -133,21 +138,28 @@ function ElementNode({ e, selected, interactive, onSelect, onDblClick, onDragEnd
               ctx.arcTo(-w / 2, -h / 2, w / 2, -h / 2, r);
               ctx.closePath();
             });
+          } else {
+            clip.clipFunc(null);
           }
         }}
         {...common} />
     );
   }
   return null;
-}
+}, (a, b) =>
+  a.e === b.e && a.selected === b.selected && a.interactive === b.interactive && a.editing === b.editing &&
+  a.onSelect === b.onSelect && a.onDblClick === b.onDblClick && a.onCommit === b.onCommit && a.onSnap === b.onSnap
+);
 
 // ─── Main canvas ────────────────────────────────────────────────────────────
 export default function CanvasStage() {
   const wrapRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage>(null);
   const trRef = useRef<Konva.Transformer>(null);
-  const nodeRefs = useRef(new Map<string, Konva.Node>());
-  const panRef = useRef({ dragging: false, startX: 0, startY: 0, origX: 0, origY: 0 });
+  const guidesLayerRef = useRef<Konva.Layer>(null);
+  const guideVRefs = useRef<(Konva.Line | null)[]>([]);
+  const guideHRefs = useRef<(Konva.Line | null)[]>([]);
+  const panRef = useRef({ dragging: false });
 
   const doc = useEditorStore((s) => s.doc);
   const selection = useEditorStore((s) => s.selection);
@@ -167,16 +179,20 @@ export default function CanvasStage() {
   const [size, setSize] = useState({ w: 800, h: 600 });
   const [pos, setPos] = useState({ x: 60, y: 60 });
   const [space, setSpace] = useState(false);
-  const [guides, setGuides] = useState<GuideLines>({ v: [], h: [] });
   const [editVal, setEditVal] = useState("");
 
   const bgImg = useLoadedImage(doc?.background.type === "image" ? doc?.background.src : undefined);
+
+  // Live mirrors so drag-time callbacks never go stale and never cause re-renders
+  const docRef = useRef(doc); docRef.current = doc;
+  const selectionRef = useRef(selection); selectionRef.current = selection;
 
   const fit = useMemo(() => {
     if (!doc) return 0.3;
     return Math.min((size.w - 110) / doc.width, (size.h - 110) / doc.height);
   }, [doc, size]);
   const scale = fit * zoom;
+  const scaleRef = useRef(scale); scaleRef.current = scale;
 
   useEffect(() => {
     const el = wrapRef.current;
@@ -186,7 +202,7 @@ export default function CanvasStage() {
     return () => ro.disconnect();
   }, []);
 
-  // Re-center when the document identity/size changes
+  // Re-center when the document size changes
   const docKey = doc ? `${doc.width}x${doc.height}` : "";
   useEffect(() => {
     if (!doc) return;
@@ -228,20 +244,39 @@ export default function CanvasStage() {
     if (doc) setPos({ x: (size.w - doc.width * fit) / 2, y: (size.h - doc.height * fit) / 2 });
   }, [doc, size, fit, setZoom]);
 
-  // ── Snap logic (single selection) ──
-  const onDragMoveSnap = useCallback((node: Konva.Node) => {
-    if (selection.length !== 1 || !doc) return;
-    const el = doc.elements.find((x) => x.id === selection[0]);
+  // ── Snap guides: drawn imperatively — ZERO React re-renders while dragging ──
+  const drawGuides = useCallback((gv: number[], gh: number[]) => {
+    const d = docRef.current, s = scaleRef.current;
+    if (!d) return;
+    guideVRefs.current.forEach((ln, i) => {
+      if (!ln) return;
+      ln.strokeWidth(1.5 / s); ln.dash([6 / s, 4 / s]);
+      if (gv[i] !== undefined) { ln.points([gv[i], -4000, gv[i], d.height + 4000]); ln.visible(true); }
+      else ln.visible(false);
+    });
+    guideHRefs.current.forEach((ln, i) => {
+      if (!ln) return;
+      ln.strokeWidth(1.5 / s); ln.dash([6 / s, 4 / s]);
+      if (gh[i] !== undefined) { ln.points([-4000, gh[i], d.width + 4000, gh[i]]); ln.visible(true); }
+      else ln.visible(false);
+    });
+    guidesLayerRef.current?.batchDraw();
+  }, []);
+
+  const onSnap = useCallback((node: Konva.Node) => {
+    const d = docRef.current, sel = selectionRef.current;
+    if (sel.length !== 1 || !d) return;
+    const el = d.elements.find((x) => x.id === sel[0]);
     if (!el) return;
     const box = node.getClientRect({ relativeTo: node.getLayer() as never, skipTransform: false });
-    const candV: number[] = [0, doc.width / 2, doc.width];
-    const candH: number[] = [0, doc.height / 2, doc.height];
-    doc.elements.forEach((o) => {
+    const candV: number[] = [0, d.width / 2, d.width];
+    const candH: number[] = [0, d.height / 2, d.height];
+    d.elements.forEach((o) => {
       if (o.id === el.id || !o.visible) return;
       candV.push(o.x, o.x + o.width / 2, o.x + o.width);
       candH.push(o.y, o.y + o.height / 2, o.y + o.height);
     });
-    const thresh = 6 / scale;
+    const thresh = 6 / scaleRef.current;
     const gv: number[] = [], gh: number[] = [];
     let dx = 0, dy = 0;
     const myV = [box.x, box.x + box.width / 2, box.x + box.width];
@@ -250,15 +285,30 @@ export default function CanvasStage() {
     for (const c of candH) for (const m of myH) if (Math.abs(c - m) < thresh) { dy = c - m; gh.push(c); }
     if (dx) node.x(node.x() + dx);
     if (dy) node.y(node.y() + dy);
-    setGuides({ v: [...new Set(gv)], h: [...new Set(gh)] });
-  }, [doc, selection, scale]);
+    drawGuides([...new Set(gv)].slice(0, 3), [...new Set(gh)].slice(0, 3));
+  }, [drawGuides]);
 
+  // ── Commit drag/transform → document (single source of truth) ──
   const commitNode = useCallback((node: Konva.Node) => {
-    if (!doc) return;
+    const d = docRef.current;
+    if (!d) return;
     const id = (node as unknown as { name?: () => string }).name?.();
-    const el = doc.elements.find((x) => x.id === id);
+    const el = d.elements.find((x) => x.id === id);
     if (!el) return;
-    setGuides({ v: [], h: [] });
+    drawGuides([], []);
+    const sel = selectionRef.current;
+
+    // Multi-drag: apply the same delta to every selected element
+    if (sel.length > 1 && sel.includes(el.id)) {
+      const centered = el.type !== "line" && el.type !== "path";
+      const ox = el.x + (centered ? el.width / 2 : 0);
+      const oy = el.y + (centered ? el.height / 2 : 0);
+      const dx = Math.round(node.x() - ox), dy = Math.round(node.y() - oy);
+      if (dx || dy) updateElements(sel, (p) => ({ ...p, x: p.x + dx, y: p.y + dy }));
+      node.x(ox + (node.x() - ox)); // keep Konva node in sync (already there)
+      return;
+    }
+
     const sx = node.scaleX(), sy = node.scaleY();
     node.scale({ x: 1, y: 1 });
     const patch: Partial<DesignElement> = { rotation: Math.round(node.rotation()) };
@@ -286,7 +336,14 @@ export default function CanvasStage() {
       patch.y = Math.round(node.y() - patch.height / 2);
     }
     updateElements([el.id], (prev) => ({ ...prev, ...patch }));
-  }, [doc, updateElements]);
+  }, [drawGuides, updateElements]);
+
+  const onSelect = useCallback((id: string, additive: boolean) => select([id], additive), [select]);
+  const onDblClick = useCallback((id: string) => {
+    const d = docRef.current;
+    const el = d?.elements.find((x) => x.id === id);
+    if (el?.type === "text") { setEditingText(id); setEditVal(el.text || ""); }
+  }, [setEditingText]);
 
   // ── Drop uploads onto canvas ──
   const onDrop = useCallback((ev: React.DragEvent) => {
@@ -296,15 +353,19 @@ export default function CanvasStage() {
     if (!id && !src) return;
     const asset = uploads.find((u) => u.id === id);
     const imgSrc = asset?.src || src;
-    if (!imgSrc || !doc) return;
+    const d = docRef.current;
+    if (!imgSrc || !d) return;
     const rect = wrapRef.current!.getBoundingClientRect();
-    const wx = (ev.clientX - rect.left - pos.x) / scale;
-    const wy = (ev.clientY - rect.top - pos.y) / scale;
+    const s = scaleRef.current;
+    const stage = stageRef.current;
+    const px = stage?.x() ?? 0, py = stage?.y() ?? 0;
+    const wx = (ev.clientX - rect.left - px) / s;
+    const wy = (ev.clientY - rect.top - py) / s;
     const iw = asset?.w || 800, ih = asset?.h || 800;
-    const w = Math.min(doc.width * 0.6, iw);
+    const w = Math.min(d.width * 0.6, iw);
     const h = w * (ih / iw);
     addElements([{ id: uid("el"), type: "image", name: asset?.name || "Dropped image", x: Math.round(wx - w / 2), y: Math.round(wy - h / 2), width: Math.round(w), height: Math.round(h), rotation: 0, opacity: 1, visible: true, locked: false, src: imgSrc }]);
-  }, [uploads, doc, pos, scale, addElements]);
+  }, [uploads, addElements]);
 
   if (!doc) return <div ref={wrapRef} className="flex-1 bg-editor" />;
 
@@ -323,14 +384,14 @@ export default function CanvasStage() {
         scaleX={scale} scaleY={scale}
         x={pos.x} y={pos.y}
         draggable={canPan}
-        onDragStart={() => { panRef.current = { dragging: true, startX: 0, startY: 0, origX: pos.x, origY: pos.y }; }}
+        onDragStart={() => { panRef.current = { dragging: true }; }}
         onDragEnd={(e) => { setPos({ x: e.target.x(), y: e.target.y() }); }}
         onWheel={(e) => {
           e.evt.preventDefault();
           const p = stageRef.current?.getPointerPosition();
           zoomAt(e.evt.deltaY < 0 ? 1.12 : 0.89, p?.x, p?.y);
         }}
-        onMouseDown={(e) => { if (e.target === e.target.getStage() && !canPan) clearSelection(); }}
+        onMouseDown={(e) => { if (e.target === e.target.getStage() && !canPan) { clearSelection(); setEditingText(null); } }}
         onTouchStart={(e) => { if (e.target === e.target.getStage() && !canPan) clearSelection(); }}
       >
         <Layer>
@@ -356,17 +417,13 @@ export default function CanvasStage() {
             <ElementNode key={e.id} e={e}
               selected={selection.includes(e.id)}
               interactive={!e.locked}
-              onSelect={(additive) => select([e.id], additive)}
-              onDblClick={() => { if (e.type === "text") { setEditingText(e.id); setEditVal(e.text || ""); } }}
-              onDragEndCb={commitNode}
-              onTransformEndCb={commitNode}
-              onDragMoveSnap={onDragMoveSnap}
+              editing={editingTextId === e.id}
+              onSelect={onSelect}
+              onDblClick={onDblClick}
+              onCommit={commitNode}
+              onSnap={onSnap}
             />
           ))}
-
-          {/* snap guides */}
-          {guides.v.map((g) => <Line key={`sgv${g}`} points={[g, -4000, g, doc.height + 4000]} stroke="#0e7c6b" strokeWidth={1.5 / scale} dash={[6 / scale, 4 / scale]} listening={false} />)}
-          {guides.h.map((g) => <Line key={`sgh${g}`} points={[-4000, g, doc.width + 4000, g]} stroke="#0e7c6b" strokeWidth={1.5 / scale} dash={[6 / scale, 4 / scale]} listening={false} />)}
 
           {/* safe zones */}
           {showSafeZones && safe && (
@@ -378,9 +435,19 @@ export default function CanvasStage() {
 
           <Transformer ref={trRef} rotateEnabled anchorSize={9} anchorCornerRadius={2}
             borderStroke="#0e7c6b" anchorStroke="#0e7c6b" anchorFill="#ffffff"
-            rotateAnchorOffset={22} ignoreStroke keepRatio={false} padding={1}
-            onMouseUp={() => { const nodes = trRef.current?.nodes(); nodes?.forEach((n) => commitNode(n)); }}
-            onTransformEnd={() => { /* handled per-node */ }} />
+            rotateAnchorOffset={22} ignoreStroke keepRatio={false} padding={1} />
+        </Layer>
+
+        {/* snap guides live on their own layer, updated imperatively */}
+        <Layer ref={guidesLayerRef} listening={false}>
+          {[0, 1, 2].map((i) => (
+            <Line key={`sgv${i}`} ref={(n: Konva.Line | null) => { guideVRefs.current[i] = n; }}
+              points={[0, 0, 0, 0]} stroke="#0e7c6b" strokeWidth={1.5 / scale} dash={[6 / scale, 4 / scale]} visible={false} />
+          ))}
+          {[0, 1, 2].map((i) => (
+            <Line key={`sgh${i}`} ref={(n: Konva.Line | null) => { guideHRefs.current[i] = n; }}
+              points={[0, 0, 0, 0]} stroke="#0e7c6b" strokeWidth={1.5 / scale} dash={[6 / scale, 4 / scale]} visible={false} />
+          ))}
         </Layer>
       </Stage>
 
@@ -414,12 +481,31 @@ export default function CanvasStage() {
         />
       )}
 
+      {/* Empty canvas hint */}
+      {doc.elements.length === 0 && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <div className="text-center anim-fade-in">
+            <p className="text-[13px] font-bold text-sub">Your canvas is empty</p>
+            <p className="text-[12px] text-faint mt-1">Pick a template, drop in an upload, or add text from the left panel</p>
+          </div>
+        </div>
+      )}
+
       {/* Zoom HUD */}
       <div className="absolute bottom-4 right-4 flex items-center gap-1 bg-surface border border-line rounded-xl shadow-lg px-1.5 py-1">
         <button onClick={() => zoomAt(0.85)} className="w-7 h-7 rounded-lg text-sub hover:bg-surface2 font-bold cursor-pointer" aria-label="Zoom out">−</button>
         <button onClick={fitView} className="h-7 px-1.5 rounded-lg text-[11.5px] font-bold text-sub hover:bg-surface2 tabular-nums cursor-pointer" aria-label="Fit to screen">{Math.round(zoom * 100)}%</button>
         <button onClick={() => zoomAt(1.18)} className="w-7 h-7 rounded-lg text-sub hover:bg-surface2 font-bold cursor-pointer" aria-label="Zoom in">+</button>
       </div>
+
+      {/* Status strip */}
+      <div className="absolute bottom-4 left-4 flex items-center gap-2 text-[11px] font-bold text-sub bg-surface/90 border border-line rounded-full px-3 py-1.5 tabular-nums">
+        <span>{doc.width} × {doc.height}</span>
+        <span className="w-1 h-1 rounded-full bg-line2" />
+        <span>{doc.elements.length} layer{doc.elements.length === 1 ? "" : "s"}</span>
+        {selection.length > 0 && <><span className="w-1 h-1 rounded-full bg-line2" /><span className="text-accent">{selection.length} selected</span></>}
+      </div>
+
       {canPan && <div className="absolute top-4 left-1/2 -translate-x-1/2 text-[11px] font-bold text-bg bg-ink/85 rounded-full px-3 py-1.5 pointer-events-none">Pan mode — drag to move the canvas</div>}
     </div>
   );
