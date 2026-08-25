@@ -1,0 +1,426 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Stage, Layer, Rect, Ellipse, Line, Path, Text as KText, Image as KImage, Transformer } from "react-konva";
+import Konva from "konva";
+import type { DesignElement, GradientSpec } from "../types";
+import { useAssetsStore, useEditorStore } from "../stores";
+import { clamp, coverCrop, loadImage, uid } from "../lib/utils";
+import { platformById } from "../lib/constants";
+
+interface GuideLines { v: number[]; h: number[]; }
+
+// ─── Image hook with load state ─────────────────────────────────────────────
+function useLoadedImage(src?: string) {
+  const [img, setImg] = useState<HTMLImageElement | null>(null);
+  useEffect(() => {
+    let live = true;
+    if (!src) { setImg(null); return; }
+    loadImage(src).then((i) => live && setImg(i)).catch(() => live && setImg(null));
+    return () => { live = false; };
+  }, [src]);
+  return img;
+}
+
+function fillProps(fill: DesignElement["fill"], w: number, h: number): Record<string, unknown> {
+  if (!fill || fill === "transparent") return { fillEnabled: false };
+  if (typeof fill === "string") return { fill };
+  const g = fill as GradientSpec;
+  const stops = g.stops.flatMap((s) => [s.offset, s.color]) as unknown as number[];
+  if (g.kind === "radial") {
+    return {
+      fillRadialGradientStartPoint: { x: w / 2, y: h / 2 }, fillRadialGradientStartRadius: 0,
+      fillRadialGradientEndPoint: { x: w / 2, y: h / 2 }, fillRadialGradientEndRadius: Math.max(w, h) * 0.72,
+      fillRadialGradientColorStops: stops,
+    };
+  }
+  const rad = ((g.angle - 90) * Math.PI) / 180;
+  const dx = (Math.cos(rad) * w) / 2, dy = (Math.sin(rad) * h) / 2;
+  return {
+    fillLinearGradientStartPoint: { x: w / 2 - dx, y: h / 2 - dy },
+    fillLinearGradientEndPoint: { x: w / 2 + dx, y: h / 2 + dy },
+    fillLinearGradientColorStops: stops,
+  };
+}
+
+// ─── One element node ───────────────────────────────────────────────────────
+function ElementNode({ e, selected, interactive, onSelect, onDblClick, onDragEndCb, onTransformEndCb, onDragMoveSnap }: {
+  e: DesignElement; selected: boolean; interactive: boolean;
+  onSelect: (additive: boolean) => void;
+  onDblClick: () => void;
+  onDragEndCb: (node: Konva.Node) => void;
+  onTransformEndCb: (node: Konva.Node) => void;
+  onDragMoveSnap: (node: Konva.Node) => void;
+}) {
+  const img = useLoadedImage(e.type === "image" ? e.src : undefined);
+  const cx = e.width / 2, cy = e.height / 2;
+  const common = {
+    id: e.id, name: e.id,
+    draggable: interactive && !e.locked,
+    listening: interactive,
+    opacity: e.opacity,
+    rotation: e.rotation,
+    globalCompositeOperation: e.blend && e.blend !== "source-over" ? (e.blend as never) : undefined,
+    shadowColor: e.shadow?.blur ? e.shadow.color : undefined,
+    shadowBlur: e.shadow?.blur || undefined,
+    shadowOffsetX: e.shadow?.blur ? e.shadow.offsetX : undefined,
+    shadowOffsetY: e.shadow?.blur ? e.shadow.offsetY : undefined,
+    shadowOpacity: e.shadow?.blur ? e.shadow.opacity : undefined,
+    onClick: (ev: Konva.KonvaEventObject<MouseEvent>) => { ev.cancelBubble = true; onSelect(ev.evt.shiftKey); },
+    onTap: (ev: Konva.KonvaEventObject<TouchEvent>) => { ev.cancelBubble = true; onSelect(false); },
+    onDblClick: () => onDblClick(),
+    onDblTap: () => onDblClick(),
+    onDragMove: (ev: Konva.KonvaEventObject<DragEvent>) => { if (selected) onDragMoveSnap(ev.target); },
+    onDragEnd: (ev: Konva.KonvaEventObject<DragEvent>) => onDragEndCb(ev.target),
+    onTransformEnd: (ev: Konva.KonvaEventObject<Event>) => onTransformEndCb(ev.target),
+  };
+
+  if (e.type === "rect") {
+    return <Rect x={e.x + cx} y={e.y + cy} offset={{ x: cx, y: cy }} width={e.width} height={e.height}
+      cornerRadius={e.radius || 0} stroke={e.strokeWidth ? e.stroke : undefined} strokeWidth={e.strokeWidth || 0}
+      dash={e.dash} {...fillProps(e.fill, e.width, e.height)} {...common} />;
+  }
+  if (e.type === "ellipse") {
+    return <Ellipse x={e.x + cx} y={e.y + cy} radiusX={e.width / 2} radiusY={e.height / 2}
+      stroke={e.strokeWidth ? e.stroke : undefined} strokeWidth={e.strokeWidth || 0}
+      {...fillProps(e.fill, e.width, e.height)} {...common} />;
+  }
+  if (e.type === "line") {
+    return <Line x={e.x} y={e.y} points={e.points || [0, 0, e.width, 0]} stroke={e.stroke || "#111"}
+      strokeWidth={e.strokeWidth || 2} dash={e.dash} lineCap="round" hitStrokeWidth={14} {...common} />;
+  }
+  if (e.type === "path") {
+    return <Path x={e.x} y={e.y} data={e.data || ""} perfectDrawEnabled={false}
+      ref={(node: Konva.Path | null) => {
+        if (!node) return;
+        const dw = node.width() || 1, dh = node.height() || 1;
+        node.scale({ x: e.width / dw, y: e.height / dh });
+      }}
+      {...fillProps(e.fill, e.width, e.height)} {...common} />;
+  }
+  if (e.type === "text") {
+    return <KText x={e.x + cx} y={e.y + cy} offset={{ x: cx, y: cy }} text={e.text || ""}
+      fontSize={e.fontSize || 24} fontFamily={`'${e.fontFamily || "Poppins"}', sans-serif`}
+      fontStyle={e.fontStyle || "normal"} letterSpacing={e.letterSpacing || 0} lineHeight={e.lineHeight || 1.2}
+      align={e.align || "left"} width={e.width} fill={e.color || "#111"}
+      textDecoration={(e.textDecoration as never) || undefined} {...common} />;
+  }
+  if (e.type === "image") {
+    const f = e.filters;
+    const hasFx = !!f && (Math.abs(f.brightness) > 0.01 || Math.abs(f.contrast) > 0.01 || Math.abs(f.saturation) > 0.01 || f.blur > 0.1);
+    const filters = hasFx && f ? ([
+      ...(Math.abs(f.brightness) > 0.01 ? [Konva.Filters.Brighten] : []),
+      ...(Math.abs(f.contrast) > 0.01 ? [Konva.Filters.Contrast] : []),
+      ...(Math.abs(f.saturation) > 0.01 ? [Konva.Filters.HSL] : []),
+      ...(f.blur > 0.1 ? [Konva.Filters.Blur] : []),
+    ] as never) : undefined;
+    return (
+      <KImage x={e.x + cx} y={e.y + cy} offset={{ x: cx, y: cy }} width={e.width} height={e.height}
+        image={img || undefined} cornerRadius={e.radius || 0}
+        crop={e.crop ? { x: e.crop.sx, y: e.crop.sy, width: e.crop.sw, height: e.crop.sh } : undefined}
+        filters={filters}
+        brightness={f?.brightness || 0} contrast={(f?.contrast || 0) * 100} saturation={f?.saturation || 0} blurRadius={f?.blur || 0}
+        ref={(node: Konva.Image | null) => {
+          if (!node) return;
+          if (filters && !node.isCached()) node.cache();
+          if (!filters && node.isCached()) node.clearCache();
+          if (e.radius && e.radius > 0) {
+            (node as unknown as { clipFunc(f: (ctx: CanvasRenderingContext2D) => void): void }).clipFunc((ctx: CanvasRenderingContext2D) => {
+              const w = e.width, h = e.height, r = Math.min(e.radius!, w / 2, h / 2);
+              ctx.beginPath();
+              ctx.moveTo(-w / 2 + r, -h / 2);
+              ctx.arcTo(w / 2, -h / 2, w / 2, h / 2, r);
+              ctx.arcTo(w / 2, h / 2, -w / 2, h / 2, r);
+              ctx.arcTo(-w / 2, h / 2, -w / 2, -h / 2, r);
+              ctx.arcTo(-w / 2, -h / 2, w / 2, -h / 2, r);
+              ctx.closePath();
+            });
+          }
+        }}
+        {...common} />
+    );
+  }
+  return null;
+}
+
+// ─── Main canvas ────────────────────────────────────────────────────────────
+export default function CanvasStage() {
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const stageRef = useRef<Konva.Stage>(null);
+  const trRef = useRef<Konva.Transformer>(null);
+  const nodeRefs = useRef(new Map<string, Konva.Node>());
+  const panRef = useRef({ dragging: false, startX: 0, startY: 0, origX: 0, origY: 0 });
+
+  const doc = useEditorStore((s) => s.doc);
+  const selection = useEditorStore((s) => s.selection);
+  const zoom = useEditorStore((s) => s.zoom);
+  const setZoom = useEditorStore((s) => s.setZoom);
+  const tool = useEditorStore((s) => s.tool);
+  const showGrid = useEditorStore((s) => s.showGrid);
+  const showSafeZones = useEditorStore((s) => s.showSafeZones);
+  const editingTextId = useEditorStore((s) => s.editingTextId);
+  const select = useEditorStore((s) => s.select);
+  const clearSelection = useEditorStore((s) => s.clearSelection);
+  const updateElements = useEditorStore((s) => s.updateElements);
+  const setEditingText = useEditorStore((s) => s.setEditingText);
+  const addElements = useEditorStore((s) => s.addElements);
+  const uploads = useAssetsStore((s) => s.uploads);
+
+  const [size, setSize] = useState({ w: 800, h: 600 });
+  const [pos, setPos] = useState({ x: 60, y: 60 });
+  const [space, setSpace] = useState(false);
+  const [guides, setGuides] = useState<GuideLines>({ v: [], h: [] });
+  const [editVal, setEditVal] = useState("");
+
+  const bgImg = useLoadedImage(doc?.background.type === "image" ? doc?.background.src : undefined);
+
+  const fit = useMemo(() => {
+    if (!doc) return 0.3;
+    return Math.min((size.w - 110) / doc.width, (size.h - 110) / doc.height);
+  }, [doc, size]);
+  const scale = fit * zoom;
+
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setSize({ w: el.clientWidth, h: el.clientHeight }));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // Re-center when the document identity/size changes
+  const docKey = doc ? `${doc.width}x${doc.height}` : "";
+  useEffect(() => {
+    if (!doc) return;
+    const f = Math.min((size.w - 110) / doc.width, (size.h - 110) / doc.height);
+    setPos({ x: (size.w - doc.width * f) / 2, y: (size.h - doc.height * f) / 2 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [docKey, size.w === 0]);
+
+  // Space-to-pan
+  useEffect(() => {
+    const dn = (e: KeyboardEvent) => { if (e.code === "Space" && !(e.target instanceof HTMLInputElement) && !(e.target instanceof HTMLTextAreaElement)) { e.preventDefault(); setSpace(true); } };
+    const up = (e: KeyboardEvent) => { if (e.code === "Space") setSpace(false); };
+    window.addEventListener("keydown", dn); window.addEventListener("keyup", up);
+    return () => { window.removeEventListener("keydown", dn); window.removeEventListener("keyup", up); };
+  }, []);
+
+  // Transformer attach (nodes resolved by Konva id)
+  useEffect(() => {
+    const tr = trRef.current;
+    const stage = stageRef.current;
+    if (!tr || !stage) return;
+    const nodes = selection.map((id) => stage.findOne(`#${id}`)).filter(Boolean) as Konva.Node[];
+    tr.nodes(nodes);
+    tr.getLayer()?.batchDraw();
+  }, [selection, doc]);
+
+  const zoomAt = useCallback((factor: number, px?: number, py?: number) => {
+    const s1 = fit * zoom;
+    const z2 = clamp(zoom * factor, 0.08, 5);
+    const s2 = fit * z2;
+    const mx = px ?? size.w / 2, my = py ?? size.h / 2;
+    const wx = (mx - pos.x) / s1, wy = (my - pos.y) / s1;
+    setPos({ x: mx - wx * s2, y: my - wy * s2 });
+    setZoom(z2);
+  }, [fit, zoom, pos, size, setZoom]);
+
+  const fitView = useCallback(() => {
+    setZoom(1);
+    if (doc) setPos({ x: (size.w - doc.width * fit) / 2, y: (size.h - doc.height * fit) / 2 });
+  }, [doc, size, fit, setZoom]);
+
+  // ── Snap logic (single selection) ──
+  const onDragMoveSnap = useCallback((node: Konva.Node) => {
+    if (selection.length !== 1 || !doc) return;
+    const el = doc.elements.find((x) => x.id === selection[0]);
+    if (!el) return;
+    const box = node.getClientRect({ relativeTo: node.getLayer() as never, skipTransform: false });
+    const candV: number[] = [0, doc.width / 2, doc.width];
+    const candH: number[] = [0, doc.height / 2, doc.height];
+    doc.elements.forEach((o) => {
+      if (o.id === el.id || !o.visible) return;
+      candV.push(o.x, o.x + o.width / 2, o.x + o.width);
+      candH.push(o.y, o.y + o.height / 2, o.y + o.height);
+    });
+    const thresh = 6 / scale;
+    const gv: number[] = [], gh: number[] = [];
+    let dx = 0, dy = 0;
+    const myV = [box.x, box.x + box.width / 2, box.x + box.width];
+    const myH = [box.y, box.y + box.height / 2, box.y + box.height];
+    for (const c of candV) for (const m of myV) if (Math.abs(c - m) < thresh) { dx = c - m; gv.push(c); }
+    for (const c of candH) for (const m of myH) if (Math.abs(c - m) < thresh) { dy = c - m; gh.push(c); }
+    if (dx) node.x(node.x() + dx);
+    if (dy) node.y(node.y() + dy);
+    setGuides({ v: [...new Set(gv)], h: [...new Set(gh)] });
+  }, [doc, selection, scale]);
+
+  const commitNode = useCallback((node: Konva.Node) => {
+    if (!doc) return;
+    const id = (node as unknown as { name?: () => string }).name?.();
+    const el = doc.elements.find((x) => x.id === id);
+    if (!el) return;
+    setGuides({ v: [], h: [] });
+    const sx = node.scaleX(), sy = node.scaleY();
+    node.scale({ x: 1, y: 1 });
+    const patch: Partial<DesignElement> = { rotation: Math.round(node.rotation()) };
+    if (el.type === "line") {
+      const pts = (node as Konva.Line).points().map((p, i) => Math.round(p * (i % 2 ? sy : sx)));
+      (node as Konva.Line).points(pts);
+      patch.points = pts;
+      patch.x = Math.round(node.x()); patch.y = Math.round(node.y());
+      patch.width = Math.max(4, Math.abs(pts[2] - pts[0])); patch.height = Math.max(2, Math.abs(pts[3] - pts[1]));
+    } else if (el.type === "path") {
+      const dw = (node as Konva.Path).width() || 1, dh = (node as Konva.Path).height() || 1;
+      patch.width = Math.round(dw * sx); patch.height = Math.round(dh * sy);
+      (node as Konva.Path).width(patch.width); (node as Konva.Path).height(patch.height);
+      patch.x = Math.round(node.x()); patch.y = Math.round(node.y());
+    } else if (el.type === "text") {
+      patch.width = Math.round(node.width() * sx);
+      patch.fontSize = Math.max(6, Math.round((el.fontSize || 24) * sy));
+      patch.x = Math.round(node.x() - patch.width / 2);
+      patch.y = Math.round(node.y() - node.height() / 2);
+      patch.height = Math.round(node.height());
+    } else {
+      patch.width = Math.round(node.width() * sx);
+      patch.height = Math.round(node.height() * sy);
+      patch.x = Math.round(node.x() - patch.width / 2);
+      patch.y = Math.round(node.y() - patch.height / 2);
+    }
+    updateElements([el.id], (prev) => ({ ...prev, ...patch }));
+  }, [doc, updateElements]);
+
+  // ── Drop uploads onto canvas ──
+  const onDrop = useCallback((ev: React.DragEvent) => {
+    ev.preventDefault();
+    const id = ev.dataTransfer.getData("text/fs-asset");
+    const src = ev.dataTransfer.getData("text/fs-src");
+    if (!id && !src) return;
+    const asset = uploads.find((u) => u.id === id);
+    const imgSrc = asset?.src || src;
+    if (!imgSrc || !doc) return;
+    const rect = wrapRef.current!.getBoundingClientRect();
+    const wx = (ev.clientX - rect.left - pos.x) / scale;
+    const wy = (ev.clientY - rect.top - pos.y) / scale;
+    const iw = asset?.w || 800, ih = asset?.h || 800;
+    const w = Math.min(doc.width * 0.6, iw);
+    const h = w * (ih / iw);
+    addElements([{ id: uid("el"), type: "image", name: asset?.name || "Dropped image", x: Math.round(wx - w / 2), y: Math.round(wy - h / 2), width: Math.round(w), height: Math.round(h), rotation: 0, opacity: 1, visible: true, locked: false, src: imgSrc }]);
+  }, [uploads, doc, pos, scale, addElements]);
+
+  if (!doc) return <div ref={wrapRef} className="flex-1 bg-editor" />;
+
+  const canPan = space || tool === "pan";
+  const editableEl = editingTextId ? doc.elements.find((e) => e.id === editingTextId) : null;
+  const sz = platformById("instagram-story")?.safeZones;
+  const docRatio = doc.width / doc.height;
+  const safe = (docRatio < 0.8 && sz) ? sz : undefined;
+
+  return (
+    <div ref={wrapRef} className="flex-1 relative overflow-hidden bg-editor select-none" onDrop={onDrop}
+      onDragOver={(e) => e.preventDefault()} style={{ cursor: canPan ? "grab" : "default" }}>
+      <Stage
+        ref={stageRef}
+        width={size.w} height={size.h}
+        scaleX={scale} scaleY={scale}
+        x={pos.x} y={pos.y}
+        draggable={canPan}
+        onDragStart={() => { panRef.current = { dragging: true, startX: 0, startY: 0, origX: pos.x, origY: pos.y }; }}
+        onDragEnd={(e) => { setPos({ x: e.target.x(), y: e.target.y() }); }}
+        onWheel={(e) => {
+          e.evt.preventDefault();
+          const p = stageRef.current?.getPointerPosition();
+          zoomAt(e.evt.deltaY < 0 ? 1.12 : 0.89, p?.x, p?.y);
+        }}
+        onMouseDown={(e) => { if (e.target === e.target.getStage() && !canPan) clearSelection(); }}
+        onTouchStart={(e) => { if (e.target === e.target.getStage() && !canPan) clearSelection(); }}
+      >
+        <Layer>
+          {/* board shadow + background */}
+          <Rect x={-14} y={-10} width={doc.width + 28} height={doc.height + 26} fill="#000" opacity={0.14} cornerRadius={6} listening={false} shadowColor="black" shadowBlur={30} shadowOpacity={0.25} />
+          {doc.background.type === "solid" && <Rect width={doc.width} height={doc.height} fill={doc.background.color} listening={false} />}
+          {doc.background.type === "gradient" && doc.background.gradient && (
+            <Rect width={doc.width} height={doc.height} {...fillProps(doc.background.gradient, doc.width, doc.height)} listening={false} />
+          )}
+          {doc.background.type === "image" && bgImg && <KImage width={doc.width} height={doc.height} image={bgImg} listening={false} />}
+          {doc.background.type === "transparent" && <Rect width={doc.width} height={doc.height} fill="#eceae3" listening={false} />}
+
+          {/* grid */}
+          {showGrid && scale > 0.18 && Array.from({ length: Math.floor(doc.width / 100) - 1 }).map((_, i) => (
+            <Line key={`gv${i}`} points={[(i + 1) * 100, 0, (i + 1) * 100, doc.height]} stroke="rgba(120,120,120,0.22)" strokeWidth={1 / scale} listening={false} />
+          ))}
+          {showGrid && scale > 0.18 && Array.from({ length: Math.floor(doc.height / 100) - 1 }).map((_, i) => (
+            <Line key={`gh${i}`} points={[0, (i + 1) * 100, doc.width, (i + 1) * 100]} stroke="rgba(120,120,120,0.22)" strokeWidth={1 / scale} listening={false} />
+          ))}
+
+          {/* elements */}
+          {doc.elements.filter((e) => e.visible).map((e) => (
+            <ElementNode key={e.id} e={e}
+              selected={selection.includes(e.id)}
+              interactive={!e.locked}
+              onSelect={(additive) => select([e.id], additive)}
+              onDblClick={() => { if (e.type === "text") { setEditingText(e.id); setEditVal(e.text || ""); } }}
+              onDragEndCb={commitNode}
+              onTransformEndCb={commitNode}
+              onDragMoveSnap={onDragMoveSnap}
+            />
+          ))}
+
+          {/* snap guides */}
+          {guides.v.map((g) => <Line key={`sgv${g}`} points={[g, -4000, g, doc.height + 4000]} stroke="#0e7c6b" strokeWidth={1.5 / scale} dash={[6 / scale, 4 / scale]} listening={false} />)}
+          {guides.h.map((g) => <Line key={`sgh${g}`} points={[-4000, g, doc.width + 4000, g]} stroke="#0e7c6b" strokeWidth={1.5 / scale} dash={[6 / scale, 4 / scale]} listening={false} />)}
+
+          {/* safe zones */}
+          {showSafeZones && safe && (
+            <>
+              <Rect x={0} y={0} width={doc.width} height={doc.height * safe.top} fill="rgba(224,90,70,0.08)" stroke="rgba(224,90,70,0.5)" strokeWidth={1.5 / scale} dash={[8 / scale, 6 / scale]} listening={false} />
+              <Rect x={0} y={doc.height * (1 - safe.bottom)} width={doc.width} height={doc.height * safe.bottom} fill="rgba(224,90,70,0.08)" stroke="rgba(224,90,70,0.5)" strokeWidth={1.5 / scale} dash={[8 / scale, 6 / scale]} listening={false} />
+            </>
+          )}
+
+          <Transformer ref={trRef} rotateEnabled anchorSize={9} anchorCornerRadius={2}
+            borderStroke="#0e7c6b" anchorStroke="#0e7c6b" anchorFill="#ffffff"
+            rotateAnchorOffset={22} ignoreStroke keepRatio={false} padding={1}
+            onMouseUp={() => { const nodes = trRef.current?.nodes(); nodes?.forEach((n) => commitNode(n)); }}
+            onTransformEnd={() => { /* handled per-node */ }} />
+        </Layer>
+      </Stage>
+
+      {/* In-place text editor overlay */}
+      {editableEl && editableEl.type === "text" && (
+        <textarea
+          autoFocus value={editVal}
+          onChange={(e) => setEditVal(e.target.value)}
+          onBlur={() => { updateElements([editableEl.id], (p) => ({ ...p, text: editVal, height: Math.max(20, Math.round(editVal.split("\n").length * (editableEl.fontSize || 24) * (editableEl.lineHeight || 1.2))) })); setEditingText(null); }}
+          onKeyDown={(e) => {
+            e.stopPropagation();
+            if (e.key === "Escape" || (e.key === "Enter" && (e.metaKey || e.ctrlKey))) (e.target as HTMLTextAreaElement).blur();
+          }}
+          aria-label="Edit text"
+          className="absolute z-30 bg-transparent outline-2 outline-accent outline rounded-sm resize-none overflow-hidden"
+          style={{
+            left: pos.x + editableEl.x * scale,
+            top: pos.y + editableEl.y * scale,
+            width: editableEl.width * scale,
+            minHeight: Math.max(30, (editableEl.fontSize || 24) * scale * 1.4),
+            fontSize: (editableEl.fontSize || 24) * scale,
+            fontFamily: `'${editableEl.fontFamily}', sans-serif`,
+            fontWeight: (editableEl.fontStyle || "").includes("bold") ? 700 : 400,
+            fontStyle: (editableEl.fontStyle || "").includes("italic") ? "italic" : "normal",
+            color: editableEl.color,
+            textAlign: editableEl.align || "left",
+            lineHeight: editableEl.lineHeight || 1.2,
+            letterSpacing: (editableEl.letterSpacing || 0) * scale,
+            padding: 0,
+          }}
+        />
+      )}
+
+      {/* Zoom HUD */}
+      <div className="absolute bottom-4 right-4 flex items-center gap-1 bg-surface border border-line rounded-xl shadow-lg px-1.5 py-1">
+        <button onClick={() => zoomAt(0.85)} className="w-7 h-7 rounded-lg text-sub hover:bg-surface2 font-bold cursor-pointer" aria-label="Zoom out">−</button>
+        <button onClick={fitView} className="h-7 px-1.5 rounded-lg text-[11.5px] font-bold text-sub hover:bg-surface2 tabular-nums cursor-pointer" aria-label="Fit to screen">{Math.round(zoom * 100)}%</button>
+        <button onClick={() => zoomAt(1.18)} className="w-7 h-7 rounded-lg text-sub hover:bg-surface2 font-bold cursor-pointer" aria-label="Zoom in">+</button>
+      </div>
+      {canPan && <div className="absolute top-4 left-1/2 -translate-x-1/2 text-[11px] font-bold text-bg bg-ink/85 rounded-full px-3 py-1.5 pointer-events-none">Pan mode — drag to move the canvas</div>}
+    </div>
+  );
+}
