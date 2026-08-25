@@ -1,0 +1,110 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --c-bg: #f2f1ec;
+  --c-surface: #fbfaf7;
+  --c-surface2: #ecebe4;
+  --c-line: #e0ded6;
+  --c-line2: #d2d0c6;
+  --c-ink: #1b1d21;
+  --c-sub: #6d6f6a;
+  --c-faint: #9b9d96;
+  --c-editor: #e7e6df;
+}
+.dark {
+  --c-bg: #121417;
+  --c-surface: #1a1d21;
+  --c-surface2: #22262b;
+  --c-line: #2c3138;
+  --c-line2: #3a4048;
+  --c-ink: #edeee9;
+  --c-sub: #9aa0a6;
+  --c-faint: #6b7178;
+  --c-editor: #0d0f11;
+}
+
+@theme inline {
+  --color-bg: var(--c-bg);
+  --color-surface: var(--c-surface);
+  --color-surface2: var(--c-surface2);
+  --color-line: var(--c-line);
+  --color-line2: var(--c-line2);
+  --color-ink: var(--c-ink);
+  --color-sub: var(--c-sub);
+  --color-faint: var(--c-faint);
+  --color-editor: var(--c-editor);
+  --color-accent: #0e7c6b;
+  --color-accent-deep: #0a5f52;
+  --color-accent-soft: #dcebe7;
+  --color-gold: #b8862f;
+  --color-gold-soft: #f3e8d2;
+  --color-danger: #c04a3a;
+  --font-display: "Space Grotesk", "Instrument Sans", sans-serif;
+  --font-sans: "Instrument Sans", "Inter", sans-serif;
+}
+
+* { min-width: 0; }
+
+body {
+  font-family: var(--font-sans);
+  background: var(--c-bg);
+  color: var(--c-ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection { background: rgba(14, 124, 107, 0.25); }
+
+/* Scrollbars */
+* { scrollbar-width: thin; scrollbar-color: var(--c-line2) transparent; }
+*::-webkit-scrollbar { width: 9px; height: 9px; }
+*::-webkit-scrollbar-thumb { background: var(--c-line2); border-radius: 8px; border: 2px solid transparent; background-clip: content-box; }
+*::-webkit-scrollbar-track { background: transparent; }
+
+/* Focus */
+:focus-visible { outline: 2px solid #0e7c6b; outline-offset: 2px; border-radius: 4px; }
+
+input[type="range"] {
+  -webkit-appearance: none; appearance: none; height: 4px; border-radius: 4px;
+  background: var(--c-line2); outline-offset: 6px;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%;
+  background: #0e7c6b; border: 2px solid var(--c-surface); box-shadow: 0 1px 4px rgba(0,0,0,.25); cursor: pointer;
+}
+input[type="color"] { -webkit-appearance: none; appearance: none; border: none; padding: 0; background: none; }
+input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+input[type="color"]::-webkit-color-swatch { border: 1px solid var(--c-line2); border-radius: 8px; }
+
+@keyframes fadeUp { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes popIn { from { opacity: 0; transform: scale(.96) translateY(8px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+@keyframes floaty { 0%,100% { transform: translateY(0) rotate(var(--rot, 0deg)); } 50% { transform: translateY(-10px) rotate(var(--rot, 0deg)); } }
+@keyframes shimmer { from { background-position: -400px 0; } to { background-position: 400px 0; } }
+@keyframes marquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+@keyframes toastIn { from { opacity: 0; transform: translateY(12px) scale(.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes pulseDot { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+
+.anim-fade-up { animation: fadeUp .55s cubic-bezier(.22,.8,.32,1) both; }
+.anim-fade-in { animation: fadeIn .35s ease both; }
+.anim-pop { animation: popIn .32s cubic-bezier(.22,.8,.32,1) both; }
+.anim-float { animation: floaty 5.5s ease-in-out infinite; }
+.anim-toast { animation: toastIn .3s cubic-bezier(.22,.8,.32,1) both; }
+
+.reveal { opacity: 0; transform: translateY(22px); transition: opacity .7s cubic-bezier(.22,.8,.32,1), transform .7s cubic-bezier(.22,.8,.32,1); }
+.reveal.is-in { opacity: 1; transform: translateY(0); }
+
+.dot-grid {
+  background-image: radial-gradient(var(--c-line2) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+
+.checker {
+  background-image: linear-gradient(45deg, rgba(128,128,128,.18) 25%, transparent 25%, transparent 75%, rgba(128,128,128,.18) 75%),
+    linear-gradient(45deg, rgba(128,128,128,.18) 25%, transparent 25%, transparent 75%, rgba(128,128,128,.18) 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 8px 8px;
+}
+
+.konvajs-content { outline: none; }
