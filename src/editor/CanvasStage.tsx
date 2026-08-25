@@ -94,10 +94,14 @@ const ElementNode = memo(function ElementNode({ e, selected, interactive, editin
       strokeWidth={e.strokeWidth || 2} dash={e.dash} lineCap="round" hitStrokeWidth={16} {...common} />;
   }
   if (e.type === "path") {
+    // Konva Path reports width()===0 for parsed data — scale from the stable
+    // data-space bounding box instead, so re-renders never compound the scale.
     return <Path x={e.x} y={e.y} data={e.data || ""} perfectDrawEnabled={false}
       ref={(node: Konva.Path | null) => {
         if (!node) return;
-        const dw = node.width() || 1, dh = node.height() || 1;
+        const r = node.getSelfRect();
+        const dw = r.width || 1, dh = r.height || 1;
+        node.offset({ x: r.x, y: r.y });
         node.scale({ x: e.width / dw, y: e.height / dh });
       }}
       {...fillProps(e.fill, e.width, e.height)} {...common} />;
@@ -334,9 +338,11 @@ export default function CanvasStage() {
       patch.x = Math.round(node.x()); patch.y = Math.round(node.y());
       patch.width = Math.max(4, Math.abs(pts[2] - pts[0])); patch.height = Math.max(2, Math.abs(pts[3] - pts[1]));
     } else if (el.type === "path") {
-      const dw = (node as Konva.Path).width() || 1, dh = (node as Konva.Path).height() || 1;
-      patch.width = Math.round(dw * sx); patch.height = Math.round(dh * sy);
-      (node as Konva.Path).width(patch.width); (node as Konva.Path).height(patch.height);
+      const p = node as Konva.Path;
+      const r = p.getSelfRect();
+      patch.width = Math.max(2, Math.round((r.width || 1) * p.scaleX() * sx));
+      patch.height = Math.max(2, Math.round((r.height || 1) * p.scaleY() * sy));
+      p.scale({ x: 1, y: 1 }); // ref will re-derive a clean scale from the new size
       patch.x = Math.round(node.x()); patch.y = Math.round(node.y());
     } else if (el.type === "text") {
       patch.width = Math.round(node.width() * sx);

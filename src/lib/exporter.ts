@@ -110,7 +110,9 @@ export async function renderDocument(doc: DesignDocument, opts: ExportOptions): 
         node = new Konva.Line({ x: e.x, y: e.y, points: pts, stroke: e.stroke || "#111", strokeWidth: e.strokeWidth || 2, dash: e.dash, lineCap: "round" });
       } else if (e.type === "path") {
         const p = new Konva.Path({ x: e.x, y: e.y, data: e.data || "" });
-        const dw = p.width() || 1, dh = p.height() || 1;
+        const r = p.getSelfRect();
+        const dw = r.width || 1, dh = r.height || 1;
+        p.offset({ x: r.x, y: r.y });
         p.scale({ x: e.width / dw, y: e.height / dh });
         applyFill(p, e.fill, e.width, e.height);
         node = p;

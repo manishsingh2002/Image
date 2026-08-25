@@ -78,8 +78,19 @@ export default function DocSVG({ doc, width, className, radius = 0 }: {
       );
     }
     if (e.type === "path") {
-      const sx = e.width / 100, sy = e.height / 100;
-      return <path d={e.data} transform={`translate(${e.x} ${e.y}) scale(${sx} ${sy})`} fill={fillStr || "none"} opacity={e.opacity} style={style} />;
+      // Path data is in absolute coords — measure its real bbox and fit into e.w/h
+      const nums = (e.data || "").match(/-?\d+(\.\d+)?/g)?.map(Number) || [];
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (let i = 0; i + 1 < nums.length; i += 2) {
+        minX = Math.min(minX, nums[i]); maxX = Math.max(maxX, nums[i]);
+        minY = Math.min(minY, nums[i + 1]); maxY = Math.max(maxY, nums[i + 1]);
+      }
+      if (!Number.isFinite(minX)) return null;
+      const sx = e.width / (maxX - minX || 1), sy = e.height / (maxY - minY || 1);
+      return (
+        <path d={e.data} transform={`translate(${e.x - minX * sx} ${e.y - minY * sy}) scale(${sx} ${sy})`}
+          fill={fillStr || "none"} opacity={e.opacity} style={style} transform-origin="0 0" />
+      );
     }
     if (e.type === "text") {
       const bold = (e.fontStyle || "").includes("bold");

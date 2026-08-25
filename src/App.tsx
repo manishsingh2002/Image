@@ -6,17 +6,35 @@ import { Share2 } from "lucide-react";
 import DocSVG from "./components/DocSVG";
 import { fmtDate } from "./lib/utils";
 
-const Landing = lazy(() => import("./pages/Landing"));
-const Auth = lazy(() => import("./pages/Auth"));
-const Dashboard = lazy(() => import("./pages/Dashboard"));
-const TemplatesPage = lazy(() => import("./pages/TemplatesPage"));
-const ProjectsPage = lazy(() => import("./pages/ProjectsPage"));
-const BrandKitPage = lazy(() => import("./pages/BrandKitPage"));
-const EditorPage = lazy(() => import("./editor/EditorPage"));
+// If a lazy chunk fails to load (stale cache after a redeploy), reload once.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function lazySafe<T extends React.ComponentType<any>>(factory: () => Promise<{ default: T }>) {
+  return lazy(() =>
+    factory().catch(() => {
+      try {
+        if (!sessionStorage.getItem("fs-chunk-reload")) {
+          sessionStorage.setItem("fs-chunk-reload", "1");
+          window.location.reload();
+          return new Promise<never>(() => {});
+        }
+      } catch { /* private mode */ }
+      throw new Error("Unable to load this screen. Please refresh the page.");
+    })
+  );
+}
+
+const Landing = lazySafe(() => import("./pages/Landing"));
+const Auth = lazySafe(() => import("./pages/Auth"));
+const Dashboard = lazySafe(() => import("./pages/Dashboard"));
+const TemplatesPage = lazySafe(() => import("./pages/TemplatesPage"));
+const ProjectsPage = lazySafe(() => import("./pages/ProjectsPage"));
+const BrandKitPage = lazySafe(() => import("./pages/BrandKitPage"));
+const EditorPage = lazySafe(() => import("./editor/EditorPage"));
 
 function ThemeSync() {
   const theme = useAppStore((s) => s.theme);
   useEffect(() => {
+    try { sessionStorage.removeItem("fs-chunk-reload"); } catch { /* noop */ }
     const apply = () => {
       const dark = theme === "dark" || (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
       document.documentElement.classList.toggle("dark", dark);
@@ -81,21 +99,23 @@ export default function App() {
   return (
     <HashRouter>
       <ThemeSync />
-      <Suspense fallback={<Loader />}>
-        <Routes>
-          <Route path="/" element={<Landing />} />
-          <Route path="/login" element={<Auth mode="login" />} />
-          <Route path="/signup" element={<Auth mode="signup" />} />
-          <Route path="/forgot" element={<Auth mode="forgot" />} />
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/templates" element={<TemplatesPage />} />
-          <Route path="/projects" element={<ProjectsPage />} />
-          <Route path="/brand-kit" element={<BrandKitPage />} />
-          <Route path="/shared/:shareId" element={<SharedView />} />
-          <Route path="/editor/:id" element={<EditorPage />} />
-          <Route path="*" element={<Landing />} />
-        </Routes>
-      </Suspense>
+      <ErrorBoundary>
+        <Suspense fallback={<Loader />}>
+          <Routes>
+            <Route path="/" element={<Landing />} />
+            <Route path="/login" element={<Auth mode="login" />} />
+            <Route path="/signup" element={<Auth mode="signup" />} />
+            <Route path="/forgot" element={<Auth mode="forgot" />} />
+            <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/templates" element={<TemplatesPage />} />
+            <Route path="/projects" element={<ProjectsPage />} />
+            <Route path="/brand-kit" element={<BrandKitPage />} />
+            <Route path="/shared/:shareId" element={<SharedView />} />
+            <Route path="/editor/:id" element={<EditorPage />} />
+            <Route path="*" element={<Landing />} />
+          </Routes>
+        </Suspense>
+      </ErrorBoundary>
       <Toasts />
     </HashRouter>
   );

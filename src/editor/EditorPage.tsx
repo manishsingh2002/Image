@@ -98,7 +98,8 @@ export default function EditorPage() {
   // Redraw once webfonts arrive so canvas text uses them
   useEffect(() => {
     (document as Document & { fonts?: { ready: Promise<unknown> } }).fonts?.ready.then(() => {
-      useEditorStore.getState().setDoc(useEditorStore.getState().doc!, false);
+      const d = useEditorStore.getState().doc;
+      if (d) useEditorStore.getState().setDoc(d, false);
     }).catch(() => {});
   }, []);
 
