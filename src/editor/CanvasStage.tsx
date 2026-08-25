@@ -7,15 +7,18 @@ import { clamp, loadImage, smartResizeDoc, uid } from "../lib/utils";
 import { platformById } from "../lib/constants";
 
 // ─── Image hook with load state ─────────────────────────────────────────────
-function useLoadedImage(src?: string) {
-  const [img, setImg] = useState<HTMLImageElement | null>(null);
+function useLoadedImage(src?: string): { img: HTMLImageElement | null; failed: boolean } {
+  const [state, setState] = useState<{ img: HTMLImageElement | null; failed: boolean }>({ img: null, failed: false });
   useEffect(() => {
     let live = true;
-    if (!src) { setImg(null); return; }
-    loadImage(src).then((i) => { if (live) setImg(i); }).catch(() => { if (live) setImg(null); });
+    if (!src) { setState({ img: null, failed: false }); return; }
+    setState({ img: null, failed: false });
+    loadImage(src)
+      .then((i) => { if (live) setState({ img: i, failed: false }); })
+      .catch(() => { if (live) setState({ img: null, failed: true }); });
     return () => { live = false; };
   }, [src]);
-  return img;
+  return state;
 }
 
 function fillProps(fill: DesignElement["fill"], w: number, h: number): Record<string, unknown> {
@@ -49,7 +52,7 @@ interface NodeProps {
 }
 
 const ElementNode = memo(function ElementNode({ e, selected, interactive, editing, onSelect, onDblClick, onCommit, onSnap }: NodeProps) {
-  const img = useLoadedImage(e.type === "image" ? e.src : undefined);
+  const { img, failed } = useLoadedImage(e.type === "image" ? e.src : undefined);
   const cx = e.width / 2, cy = e.height / 2;
   const common = {
     id: e.id, name: e.id,
@@ -107,6 +110,14 @@ const ElementNode = memo(function ElementNode({ e, selected, interactive, editin
       textDecoration={(e.textDecoration as never) || undefined} {...common} />;
   }
   if (e.type === "image") {
+    // Source failed to load: show a selectable placeholder instead of an invisible hole
+    if (failed && !img) {
+      return (
+        <Rect x={e.x + cx} y={e.y + cy} offset={{ x: cx, y: cy }} width={e.width} height={e.height}
+          fill="#cfccc3" cornerRadius={e.radius || 0} stroke="#b3b0a6" strokeWidth={2} dash={[10, 8]}
+          {...common} />
+      );
+    }
     const f = e.filters;
     const hasFx = !!f && (Math.abs(f.brightness) > 0.01 || Math.abs(f.contrast) > 0.01 || Math.abs(f.saturation) > 0.01 || f.blur > 0.1);
     const filters = hasFx && f ? ([
@@ -184,7 +195,8 @@ export default function CanvasStage() {
   const [space, setSpace] = useState(false);
   const [editVal, setEditVal] = useState("");
 
-  const bgImg = useLoadedImage(doc?.background.type === "image" ? doc?.background.src : undefined);
+  const bgImgState = useLoadedImage(doc?.background.type === "image" ? doc?.background.src : undefined);
+  const bgImg = bgImgState.img;
 
   // Live mirrors so drag-time callbacks never go stale and never cause re-renders
   const docRef = useRef(doc); docRef.current = doc;
@@ -466,8 +478,9 @@ export default function CanvasStage() {
           {doc.background.type === "transparent" && <Rect width={doc.width} height={doc.height} fill="#eceae3" listening={false} />}
 
           {/* Page click-catcher: click empty canvas → select the whole banner.
-              Once selected, dragging it moves every element together (Canva-style). */}
-          <Rect width={doc.width} height={doc.height} fill="#000" opacity={0.01}
+              Once selected, dragging it moves every element together (Canva-style).
+              White @ 1% so it's hittable yet can never darken the design. */}
+          <Rect width={doc.width} height={doc.height} fill="#fff" opacity={0.01}
             draggable={pageSelected && !canPan}
             onClick={(ev) => { ev.cancelBubble = true; selectPage(); }}
             onTap={(ev) => { ev.cancelBubble = true; selectPage(); }}

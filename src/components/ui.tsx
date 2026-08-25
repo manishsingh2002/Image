@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ChevronDown, Search, X, Check, AlertTriangle, Info } from "lucide-react";
 import { cx } from "../lib/utils";
@@ -237,6 +237,36 @@ export function EmptyState({ icon, title, body, action }: { icon: React.ReactNod
       {action && <div className="mt-5">{action}</div>}
     </div>
   );
+}
+
+// ─── Error boundary — never let a crash render as a blank/black screen ──────
+export class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { error: Error | null }> {
+  state = { error: null as Error | null };
+  static getDerivedStateFromError(error: Error) { return { error }; }
+  componentDidCatch(error: Error) { console.error("[Format Studio]", error); }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="min-h-[60vh] flex items-center justify-center p-6">
+          <div className="max-w-md w-full bg-surface border border-line rounded-2xl p-7 text-center shadow-xl anim-pop">
+            <div className="w-12 h-12 mx-auto rounded-xl bg-danger/10 text-danger flex items-center justify-center mb-4">
+              <AlertTriangle size={22} />
+            </div>
+            <h2 className="font-display font-bold text-lg text-ink">Something went wrong here</h2>
+            <p className="text-[13px] text-sub mt-1.5 leading-relaxed">
+              Your designs are safe — they autosave locally. Reload the section, or head back to the dashboard.
+            </p>
+            <p className="text-[11px] font-mono text-faint mt-3 bg-surface2 rounded-lg px-3 py-2 break-all">{String(this.state.error.message || this.state.error)}</p>
+            <div className="flex gap-2 justify-center mt-5">
+              <Button variant="outline" onClick={() => { this.setState({ error: null }); }}>Try again</Button>
+              <Button onClick={() => { window.location.hash = "#/dashboard"; this.setState({ error: null }); }}>Back to dashboard</Button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
 }
 
 // ─── Toasts ─────────────────────────────────────────────────────────────────

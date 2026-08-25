@@ -45,15 +45,19 @@ export function downloadBlob(blob: Blob, filename: string) {
 const imgCache = new Map<string, HTMLImageElement>();
 const urlCache = new Map<string, string>();
 
+const withTimeout = <T,>(p: Promise<T>, ms: number): Promise<T> =>
+  Promise.race([p, new Promise<T>((_, rej) => setTimeout(() => rej(new Error("timeout")), ms))]);
+
 /** Resolve a (possibly remote) image URL into a same-origin-safe URL when CORS
- *  allows it, so canvas exports never taint. Falls back to the original URL. */
-async function resolveCleanUrl(src: string): Promise<string> {
+ *  allows it, so canvas exports never taint. Used at EXPORT time only, with a
+ *  hard timeout so a stalled network can never block anything. */
+export async function resolveCleanUrl(src: string): Promise<string> {
   if (src.startsWith("data:") || src.startsWith("blob:")) return src;
   if (urlCache.has(src)) return urlCache.get(src)!;
   try {
-    const res = await fetch(src, { mode: "cors" });
+    const res = await withTimeout(fetch(src, { mode: "cors" }), 6000);
     if (!res.ok) throw new Error("http");
-    const blob = await res.blob();
+    const blob = await withTimeout(res.blob(), 8000);
     const obj = URL.createObjectURL(blob);
     urlCache.set(src, obj);
     return obj;
@@ -63,21 +67,24 @@ async function resolveCleanUrl(src: string): Promise<string> {
   }
 }
 
+/** Load fast, always: request the image directly (anonymous-CORS first, so
+ *  exports stay untainted when the host cooperates), retrying without CORS so
+ *  the picture still shows even when the host refuses CORS headers. Never
+ *  blocks on a fetch — the canvas must render immediately. */
 export function loadImage(src: string): Promise<HTMLImageElement> {
-  return new Promise(async (resolve, reject) => {
-    const clean = await resolveCleanUrl(src);
-    if (imgCache.has(clean)) return resolve(imgCache.get(clean)!);
+  return new Promise((resolve, reject) => {
+    if (imgCache.has(src)) return resolve(imgCache.get(src)!);
     const img = new Image();
     img.crossOrigin = "anonymous";
-    img.onload = () => { imgCache.set(clean, img); resolve(img); };
+    img.onload = () => { imgCache.set(src, img); resolve(img); };
     img.onerror = () => {
-      // Retry without crossOrigin (may taint canvas but still displays)
+      // Retry without crossOrigin (may taint the export canvas, but still displays)
       const img2 = new Image();
-      img2.onload = () => { imgCache.set(clean, img2); resolve(img2); };
+      img2.onload = () => { imgCache.set(src, img2); resolve(img2); };
       img2.onerror = () => reject(new Error("Image failed to load"));
-      img2.src = clean;
+      img2.src = src;
     };
-    img.src = clean;
+    img.src = src;
   });
 }
 

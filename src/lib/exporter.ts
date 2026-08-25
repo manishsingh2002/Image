@@ -1,6 +1,6 @@
 import Konva from "konva";
 import type { DesignDocument, DesignElement, Fill } from "../types";
-import { loadImage } from "./utils";
+import { loadImage, resolveCleanUrl } from "./utils";
 
 export type ExportFormat = "png" | "jpeg" | "webp" | "pdf";
 export interface ExportOptions {
@@ -55,7 +55,10 @@ export async function renderDocument(doc: DesignDocument, opts: ExportOptions): 
     ...(doc.background.type === "image" && doc.background.src ? [doc.background.src] : []),
     ...doc.elements.filter((e) => e.type === "image" && e.src).map((e) => e.src!),
   ]));
-  const results = await Promise.allSettled(srcs.map((s) => loadImage(s)));
+  // Resolve CORS-clean copies (bounded) so exports don't taint; loadImage itself never blocks.
+  const results = await Promise.allSettled(
+    srcs.map(async (s) => loadImage(await resolveCleanUrl(s)))
+  );
   const imgMap = new Map<string, HTMLImageElement>();
   srcs.forEach((s, i) => { if (results[i].status === "fulfilled") imgMap.set(s, (results[i] as PromiseFulfilledResult<HTMLImageElement>).value); });
 

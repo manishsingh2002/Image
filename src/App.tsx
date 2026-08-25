@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect } from "react";
 import { HashRouter, Route, Routes, useNavigate, useParams, Link } from "react-router-dom";
 import { useAppStore, useDesignsStore } from "./stores";
-import { Toasts, Button } from "./components/ui";
+import { Toasts, Button, ErrorBoundary } from "./components/ui";
 import { Share2 } from "lucide-react";
 import DocSVG from "./components/DocSVG";
 import { fmtDate } from "./lib/utils";

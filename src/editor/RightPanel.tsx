@@ -84,8 +84,8 @@ export default function RightPanel() {
 
   // ── Canvas / page properties ──
   if (!one) {
-    const ratio = doc.height / doc.width;
-    const ratioName = Math.abs(ratio - 1) < 0.02 ? "Square" : ratio > 1.3 ? "Landscape" : ratio < 0.75 ? "Portrait" : "Classic";
+    const ratio = doc.height / doc.width; // >1 = tall
+    const ratioName = Math.abs(ratio - 1) < 0.02 ? "Square" : ratio > 1.3 ? "Portrait" : ratio < 0.75 ? "Landscape" : "Classic";
     const pw = pageW ?? doc.width;
     return (
       <aside className="w-[264px] shrink-0 border-l border-line bg-surface p-4 overflow-y-auto">
