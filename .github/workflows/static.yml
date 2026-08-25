@@ -21,7 +21,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Workaround: remove package-lock and node_modules (fix optional deps bug)
+      - name: "Workaround: remove package-lock and node_modules (fix optional deps bug)"
         run: |
           echo "Removing package-lock.json and node_modules to avoid npm optional-deps bug"
           rm -f package-lock.json
