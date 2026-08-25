@@ -2,7 +2,9 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Stage, Layer, Group, Rect, Ellipse, Line, Path, Text as KText, Image as KImage, Transformer } from "react-konva";
 import Konva from "konva";
 import type { DesignDocument, DesignElement, GradientSpec } from "../types";
-import { useAssetsStore, useEditorStore } from "../stores";
+import { useAppStore, useAssetsStore, useEditorStore } from "../stores";
+
+let pageHintShown = false;
 import { clamp, loadImage, smartResizeDoc, uid } from "../lib/utils";
 import { platformById } from "../lib/constants";
 
@@ -492,16 +494,21 @@ export default function CanvasStage() {
           {doc.background.type === "image" && bgImg && <KImage width={doc.width} height={doc.height} image={bgImg} listening={false} />}
           {doc.background.type === "transparent" && <Rect width={doc.width} height={doc.height} fill="#eceae3" listening={false} />}
 
-          {/* Page click-catcher: click empty canvas → select the whole banner.
-              Once selected, dragging it moves every element together (Canva-style).
-              White @ 1% so it's hittable yet can never darken the design. */}
+          {/* Page click-catcher: click empty canvas → toggle whole-page selection.
+              It is deliberately NOT draggable — the interior never moves the design;
+              the whole banner moves only by grabbing the teal frame border (Canva-style),
+              so element editing always stays stable. White @ 1%: hittable, never visible. */}
           <Rect width={doc.width} height={doc.height} fill="#fff" opacity={0.01}
-            draggable={pageSelected && !canPan}
-            onClick={(ev) => { ev.cancelBubble = true; selectPage(); }}
-            onTap={(ev) => { ev.cancelBubble = true; selectPage(); }}
-            onDragStart={pageDragStart}
-            onDragMove={(ev) => pageDragMove(ev.target.x(), ev.target.y())}
-            onDragEnd={(ev) => pageDragEnd(ev.target)}
+            onClick={(ev) => {
+              ev.cancelBubble = true;
+              if (pageSelected) { clearSelection(); return; }
+              selectPage();
+              if (!pageHintShown) {
+                pageHintShown = true;
+                useAppStore.getState().toast("Whole page selected — drag the teal border to move everything, or click any element to edit it.", "info");
+              }
+            }}
+            onTap={(ev) => { ev.cancelBubble = true; pageSelected ? clearSelection() : selectPage(); }}
           />
 
           {/* grid */}
