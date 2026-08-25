@@ -29,9 +29,12 @@ function applyFill(node: Konva.Shape, fill: Fill | undefined, w: number, h: numb
   }
 }
 
-function applyCommon(node: Konva.Shape, e: DesignElement) {
+// Konva 10: rotation/opacity live on Node; shadow + blend live on Shape.
+function applyTransform(node: Konva.Node, e: DesignElement) {
   node.rotation(e.rotation);
   node.opacity(e.opacity);
+}
+function applyShapeFx(node: Konva.Shape, e: DesignElement) {
   if (e.blend && e.blend !== "source-over") (node as unknown as { globalCompositeOperation(v: string): void }).globalCompositeOperation(e.blend);
   if (e.shadow && e.shadow.blur > 0) {
     const s = node as Konva.Shape & {
@@ -131,22 +134,38 @@ export async function renderDocument(doc: DesignDocument, opts: ExportOptions): 
             ? { x: e.crop.sx, y: e.crop.sy, width: e.crop.sw, height: e.crop.sh }
             : undefined;
           const n = new Konva.Image({ x: e.x + cx, y: e.y + cy, offset: { x: cx, y: cy }, width: e.width, height: e.height, image: img, crop });
-          if (e.radius && e.radius > 0) {
-            n.cornerRadius(e.radius);
-            (n as unknown as { clipFunc(f: (ctx: CanvasRenderingContext2D) => void): void }).clipFunc((ctx: CanvasRenderingContext2D) => { roundRectPath(ctx, e.width, e.height, e.radius!); });
-          }
+          applyShapeFx(n, e);
           const f = e.filters;
+          const F = (Konva.Filters || {}) as Record<string, unknown>;
+          const nn = n as unknown as {
+            brightness(v: number): void; contrast(v: number): void; saturation(v: number): void; blurRadius(v: number): void;
+          };
           const hasFilters = f && (Math.abs(f.brightness) > 0.01 || Math.abs(f.contrast) > 0.01 || Math.abs(f.saturation) > 0.01 || f.blur > 0.1);
           if (hasFilters && f) {
             n.cache();
             const filters: never[] = [];
-            if (Math.abs(f.brightness) > 0.01) { filters.push(Konva.Filters.Brighten as never); n.brightness(f.brightness); }
-            if (Math.abs(f.contrast) > 0.01) { filters.push(Konva.Filters.Contrast as never); n.contrast(f.contrast * 100); }
-            if (Math.abs(f.saturation) > 0.01) { filters.push(Konva.Filters.HSL as never); n.saturation(f.saturation); }
-            if (f.blur > 0.1) { filters.push(Konva.Filters.Blur as never); n.blurRadius(f.blur); }
+            if (Math.abs(f.brightness) > 0.01 && typeof F.Brighten === "function") { filters.push(F.Brighten as never); nn.brightness(f.brightness); }
+            if (Math.abs(f.contrast) > 0.01 && typeof F.Contrast === "function") { filters.push(F.Contrast as never); nn.contrast(f.contrast * 100); }
+            if (Math.abs(f.saturation) > 0.01 && typeof F.HSL === "function") { filters.push(F.HSL as never); nn.saturation(f.saturation); }
+            if (f.blur > 0.1 && typeof F.Blur === "function") { filters.push(F.Blur as never); nn.blurRadius(f.blur); }
             n.filters(filters);
           }
-          node = n;
+          // Konva 10: clipFunc lives on Container → rounded images clip via a Group
+          if (e.radius && e.radius > 0) {
+            const r = Math.min(e.radius, e.width / 2, e.height / 2);
+            const g = new Konva.Group({ x: e.x + cx, y: e.y + cy });
+            (g as unknown as { clipFunc(fn: (ctx: CanvasRenderingContext2D) => void): void }).clipFunc(
+              (ctx: CanvasRenderingContext2D) => roundRectPath(ctx, e.width, e.height, r)
+            );
+            n.position({ x: 0, y: 0 });
+            g.add(n);
+            applyTransform(g, e);
+            layer.add(g);
+          } else {
+            applyTransform(n, e);
+            layer.add(n);
+          }
+          node = null; // already added above
         } else {
           // Image unavailable — render a labeled placeholder block instead of failing.
           node = new Konva.Rect({ x: e.x + cx, y: e.y + cy, offset: { x: cx, y: cy }, width: e.width, height: e.height, fill: "#d8d6cf", cornerRadius: e.radius || 0 });
@@ -154,7 +173,8 @@ export async function renderDocument(doc: DesignDocument, opts: ExportOptions): 
       }
 
       if (node) {
-        applyCommon(node as Konva.Shape, e);
+        applyTransform(node, e);
+        if (node instanceof Konva.Shape) applyShapeFx(node, e);
         layer.add(node as Konva.Shape);
       }
     }

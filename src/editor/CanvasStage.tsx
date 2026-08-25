@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Stage, Layer, Rect, Ellipse, Line, Path, Text as KText, Image as KImage, Transformer } from "react-konva";
+import { Stage, Layer, Group, Rect, Ellipse, Line, Path, Text as KText, Image as KImage, Transformer } from "react-konva";
 import Konva from "konva";
 import type { DesignDocument, DesignElement, GradientSpec } from "../types";
 import { useAssetsStore, useEditorStore } from "../stores";
@@ -41,6 +41,24 @@ function fillProps(fill: DesignElement["fill"], w: number, h: number): Record<st
     fillLinearGradientColorStops: stops,
   };
 }
+
+// Konva 10 layout: shadow/blend/filters live on Shape, clipFunc lives on
+// Container — so image effects stay on the <Image> and rounded corners are
+// clipped by a wrapping <Group>.
+function roundedRectClip(ctx: CanvasRenderingContext2D, w: number, h: number, r: number) {
+  ctx.beginPath();
+  ctx.moveTo(-w / 2 + r, -h / 2);
+  ctx.arcTo(w / 2, -h / 2, w / 2, h / 2, r);
+  ctx.arcTo(w / 2, h / 2, -w / 2, h / 2, r);
+  ctx.arcTo(-w / 2, h / 2, -w / 2, -h / 2, r);
+  ctx.arcTo(-w / 2, -h / 2, w / 2, -h / 2, r);
+  ctx.closePath();
+}
+const cacheRefFor = (filters: unknown) => (node: Konva.Image | null) => {
+  if (!node) return;
+  if (filters && !node.isCached()) node.cache();
+  if (!filters && node.isCached()) node.clearCache();
+};
 
 // ─── One element node (memoized — never re-renders during drags) ───────────
 interface NodeProps {
@@ -122,43 +140,34 @@ const ElementNode = memo(function ElementNode({ e, selected, interactive, editin
           {...common} />
       );
     }
+    const { shadowColor, shadowBlur, shadowOffsetX, shadowOffsetY, shadowOpacity, globalCompositeOperation, ...nodeCommon } = common;
     const f = e.filters;
     const hasFx = !!f && (Math.abs(f.brightness) > 0.01 || Math.abs(f.contrast) > 0.01 || Math.abs(f.saturation) > 0.01 || f.blur > 0.1);
-    const filters = hasFx && f ? ([
-      ...(Math.abs(f.brightness) > 0.01 ? [Konva.Filters.Brighten] : []),
-      ...(Math.abs(f.contrast) > 0.01 ? [Konva.Filters.Contrast] : []),
-      ...(Math.abs(f.saturation) > 0.01 ? [Konva.Filters.HSL] : []),
-      ...(f.blur > 0.1 ? [Konva.Filters.Blur] : []),
-    ] as never) : undefined;
-    return (
-      <KImage x={e.x + cx} y={e.y + cy} offset={{ x: cx, y: cy }} width={e.width} height={e.height}
-        image={img || undefined}
-        crop={e.crop ? { x: e.crop.sx, y: e.crop.sy, width: e.crop.sw, height: e.crop.sh } : undefined}
-        filters={filters}
-        brightness={f?.brightness || 0} contrast={(f?.contrast || 0) * 100} saturation={f?.saturation || 0} blurRadius={f?.blur || 0}
-        ref={(node: Konva.Image | null) => {
-          if (!node) return;
-          if (filters && !node.isCached()) node.cache();
-          if (!filters && node.isCached()) node.clearCache();
-          // Rounded-corner clipping, kept in sync imperatively (also cleared when radius → 0)
-          const clip = node as unknown as { clipFunc(f: ((ctx: CanvasRenderingContext2D) => void) | null): void };
-          if (e.radius && e.radius > 0) {
-            const w = e.width, h = e.height, r = Math.min(e.radius, w / 2, h / 2);
-            clip.clipFunc((ctx: CanvasRenderingContext2D) => {
-              ctx.beginPath();
-              ctx.moveTo(-w / 2 + r, -h / 2);
-              ctx.arcTo(w / 2, -h / 2, w / 2, h / 2, r);
-              ctx.arcTo(w / 2, h / 2, -w / 2, h / 2, r);
-              ctx.arcTo(-w / 2, h / 2, -w / 2, -h / 2, r);
-              ctx.arcTo(-w / 2, -h / 2, w / 2, -h / 2, r);
-              ctx.closePath();
-            });
-          } else {
-            clip.clipFunc(null);
-          }
-        }}
-        {...common} />
-    );
+    const F = (Konva.Filters || {}) as Record<string, unknown>;
+    const list = hasFx && f ? [
+      ...(Math.abs(f.brightness) > 0.01 && typeof F.Brighten === "function" ? [F.Brighten] : []),
+      ...(Math.abs(f.contrast) > 0.01 && typeof F.Contrast === "function" ? [F.Contrast] : []),
+      ...(Math.abs(f.saturation) > 0.01 && typeof F.HSL === "function" ? [F.HSL] : []),
+      ...(f.blur > 0.1 && typeof F.Blur === "function" ? [F.Blur] : []),
+    ] : [];
+    const filters = list.length ? (list as never) : undefined;
+    const inner = {
+      width: e.width, height: e.height, image: img || undefined,
+      crop: e.crop ? { x: e.crop.sx, y: e.crop.sy, width: e.crop.sw, height: e.crop.sh } : undefined,
+      filters,
+      brightness: f?.brightness || 0, contrast: (f?.contrast || 0) * 100,
+      saturation: f?.saturation || 0, blurRadius: f?.blur || 0,
+      shadowColor, shadowBlur, shadowOffsetX, shadowOffsetY, shadowOpacity, globalCompositeOperation,
+    };
+    const radius = e.radius && e.radius > 0 ? Math.min(e.radius, e.width / 2, e.height / 2) : 0;
+    if (radius > 0) {
+      return (
+        <Group x={e.x + cx} y={e.y + cy} clipFunc={((ctx: CanvasRenderingContext2D) => roundedRectClip(ctx, e.width, e.height, radius)) as never} {...nodeCommon}>
+          <KImage offset={{ x: cx, y: cy }} ref={cacheRefFor(filters)} {...inner} />
+        </Group>
+      );
+    }
+    return <KImage x={e.x + cx} y={e.y + cy} offset={{ x: cx, y: cy }} ref={cacheRefFor(filters)} {...inner} {...nodeCommon} />;
   }
   return null;
 }, (a, b) =>
